@@ -1,0 +1,1436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Lumina Clock</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+<meta name="theme-color" content="#000000" />
+<meta name="description" content="Lumina — a stunning full-screen clock that reacts to music and weather. Installable on iPhone, Android & desktop." />
+
+<!-- PWA -->
+<link rel="manifest" href="manifest.webmanifest" />
+
+<!-- iOS standalone / chromeless -->
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Lumina" />
+<link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png" />
+
+<!-- Fonts (graceful fallback to system fonts offline) -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;500;700;900&family=Orbitron:wght@500;700;900&family=Monoton&family=Sora:wght@300;600;800&family=Space+Grotesk:wght@400;700&family=Share+Tech+Mono&family=Space+Mono:wght@700&family=Chakra+Petch:wght@600;700&family=Archivo:wght@700;900&display=swap" rel="stylesheet" />
+<!-- DSEG 7-segment font (with fallback) -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dseg@0.46.0/css/dseg.css" />
+
+<style>
+:root{
+  color-scheme: dark;
+  --accent:#6ad5ff;
+  --accent2:#b892ff;
+  --bg:#000000;
+  --fg:#ffffff;
+  --clockfont:'Poppins';        /* selectable numeral font */
+  --num:rgba(255,255,255,.96);  /* numeral color (aurora) */
+  --dim:1;               /* brightness multiplier, set by night mode */
+  --safe-t:env(safe-area-inset-top);
+  --safe-r:env(safe-area-inset-right);
+  --safe-b:env(safe-area-inset-bottom);
+  --safe-l:env(safe-area-inset-left);
+}
+*{box-sizing:border-box;}
+html,body{
+  margin:0; padding:0; height:100%; width:100%;
+  background:var(--bg); color:var(--fg);
+  overflow:hidden;
+  font-family:'Poppins',system-ui,-apple-system,"Segoe UI",sans-serif;
+  -webkit-user-select:none; user-select:none;
+  -webkit-tap-highlight-color:transparent;
+  touch-action:none;
+  -webkit-font-smoothing:antialiased;
+}
+body{ filter:brightness(var(--dim)); transition:filter .8s ease, background .8s ease; }
+
+/* ---- Stage & layers ---- */
+#stage{
+  position:fixed; inset:0;
+  padding:var(--safe-t) var(--safe-r) var(--safe-b) var(--safe-l);
+  display:flex; align-items:center; justify-content:center;
+}
+#bgcanvas{ position:fixed; inset:0; width:100%; height:100%; display:block; z-index:0; }
+#weatherfx{ position:fixed; inset:0; width:100%; height:100%; display:block; z-index:1; pointer-events:none; }
+.layer{ position:fixed; inset:0; display:none; z-index:2; align-items:center; justify-content:center; pointer-events:none; }
+.layer.active{ display:flex; }
+.hidden{ display:none !important; }
+
+/* generic centered stack */
+.stack{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2vmin; text-align:center; }
+
+/* ================= AURORA (StandBy) ================= */
+#layer-aurora .time{
+  font-family:var(--clockfont),'Poppins',sans-serif; font-weight:700;
+  font-variant-numeric:tabular-nums; line-height:.92;
+  font-size:min(34vw,42vh); letter-spacing:-.02em;
+  color:var(--num);
+  text-shadow:0 0 60px color-mix(in srgb, var(--num) 22%, transparent);
+}
+#layer-aurora .sub{ font-weight:300; opacity:.85; font-size:min(5.5vw,4vh); letter-spacing:.28em; text-transform:uppercase; }
+@media (orientation:landscape){ #layer-aurora .time{ font-size:min(26vw,58vh); } }
+
+/* ================= NEON (multi-layer glow + flicker + reflection) ================= */
+#layer-neon{ background:transparent; }
+#layer-neon .neon-wrap{ position:relative; display:flex; flex-direction:column; align-items:center; }
+#layer-neon .time{
+  --glow:1;
+  font-family:'Monoton',cursive; font-weight:400; font-size:min(28vw,38vh); line-height:1;
+  color:#fdf3ff;                                  /* near-white core */
+  text-shadow:
+    0 0 2px #fff,
+    0 0 6px  var(--accent),
+    0 0 12px var(--accent),
+    0 0 calc(24px * var(--glow)) var(--accent),
+    0 0 calc(46px * var(--glow)) var(--accent2),
+    0 0 calc(82px * var(--glow)) var(--accent2);
+  filter:brightness(calc(.92 + var(--glow) * .18));
+}
+#layer-neon .time .fl{ animation:neonFlicker 5.2s infinite steps(1,end); }  /* one flickering glyph */
+@keyframes neonFlicker{
+  0%,17%,21%,24%,55%,59%,100%{ opacity:1; }
+  19%,23%,57%{ opacity:.35; text-shadow:none; }
+}
+#layer-neon .reflect{
+  margin-top:-.1em; transform:scaleY(-1); opacity:.22; filter:blur(3px);
+  -webkit-mask-image:linear-gradient(transparent 42%,#000 96%); mask-image:linear-gradient(transparent 42%,#000 96%);
+  pointer-events:none;
+}
+#layer-neon .sub{ font-family:'Orbitron',sans-serif; letter-spacing:.35em; opacity:.9; font-size:min(4.5vw,3.4vh);
+  color:#fdf3ff; text-shadow:0 0 4px #fff,0 0 16px var(--accent2); margin-top:.4em; }
+@media (orientation:landscape){ #layer-neon .time{ font-size:min(20vw,50vh); } }
+
+/* ================= FLIP (true 3D split-flap, Fliqlo-style) ================= */
+#layer-flip .flip-row{ display:flex; gap:min(1.4vw,1.4vh); align-items:center; }
+.flip-colon{ font-family:'Archivo',sans-serif; font-weight:900; font-size:min(11vw,16vh); opacity:.3; margin:0 .06em; }
+.flip-group{ display:flex; gap:min(0.9vw,0.9vh); }
+.flip-secs{ display:none; }
+body.secs #layer-flip .flip-secs{ display:flex; }
+.flip3d{
+  position:relative; display:inline-block;
+  width:min(19vw,25vh); height:1.42em;
+  font-family:'Archivo',sans-serif; font-weight:900; font-size:min(20vw,26vh); line-height:1;
+  perspective:900px; border-radius:.1em; background:#0c0c0e;
+  box-shadow:0 min(1.4vh,14px) min(4vh,34px) rgba(0,0,0,.55);
+}
+@media (orientation:landscape){ .flip3d{ width:min(13vw,30vh); font-size:min(13vw,30vh);} }
+.flip3d .fc{ position:absolute; left:0; width:100%; height:50%; overflow:hidden; display:flex; justify-content:center;
+  background:linear-gradient(#33333a,#232327); color:#f4f4f7;
+  backface-visibility:hidden; -webkit-backface-visibility:hidden; }
+.flip3d .fc span{ display:block; height:1.42em; line-height:1.42em; width:100%; text-align:center; text-shadow:0 1px 1px rgba(0,0,0,.4); }
+.flip3d .fc.top,.flip3d .fc.flip-top{ top:0; align-items:flex-start; border-radius:.1em .1em 0 0;
+  border-bottom:1px solid rgba(0,0,0,.5); background:linear-gradient(#37373f,#2b2b31); }
+.flip3d .fc.bottom,.flip3d .fc.flip-bottom{ bottom:0; align-items:flex-end; border-radius:0 0 .1em .1em; background:linear-gradient(#2a2a30,#1b1b1f); }
+.flip3d .flip-top{ z-index:3; transform-origin:bottom; transform:rotateX(0deg); }
+.flip3d .flip-bottom{ z-index:3; transform-origin:top; transform:rotateX(90deg); }
+.flip3d .top,.flip3d .bottom{ z-index:1; }
+.flip3d .fc.flip-top::after,.flip3d .fc.flip-bottom::after{ content:""; position:absolute; inset:0; pointer-events:none; }
+.flip3d .fc.flip-top::after{ background:linear-gradient(rgba(0,0,0,0),rgba(0,0,0,.55)); opacity:0; }
+.flip3d .fc.flip-bottom::after{ background:linear-gradient(rgba(0,0,0,.5),rgba(0,0,0,0)); opacity:0; }
+.flip3d.go .flip-top{ animation:foldTop .26s ease-in forwards; }
+.flip3d.go .flip-bottom{ animation:unfoldBottom .26s ease-out .26s forwards; }
+.flip3d.go .flip-top::after{ animation:flDark .26s ease-in forwards; }
+.flip3d.go .flip-bottom::after{ animation:flLight .26s ease-out .26s forwards; }
+@keyframes foldTop{ to{ transform:rotateX(-90deg);} }
+@keyframes unfoldBottom{ from{ transform:rotateX(90deg);} to{ transform:rotateX(0deg);} }
+@keyframes flDark{ from{opacity:0;} to{opacity:1;} }
+@keyframes flLight{ from{opacity:1;} to{opacity:0;} }
+body.light #layer-flip .flip3d{ background:#dcdce2; }
+body.light #layer-flip .flip3d .fc{ color:#1a1a1e; }
+body.light #layer-flip .flip3d .fc.top,body.light #layer-flip .flip3d .fc.flip-top{ background:linear-gradient(#fff,#f0f0f4); border-bottom-color:rgba(0,0,0,.12); }
+body.light #layer-flip .flip3d .fc.bottom,body.light #layer-flip .flip3d .fc.flip-bottom{ background:linear-gradient(#f0f0f4,#e4e4ea); }
+
+/* ================= SEVEN-SEGMENT (recessed LED panel) ================= */
+#layer-seg{ background:transparent; }
+#layer-seg .panel{
+  position:relative; padding:.28em .5em; border-radius:.16em;
+  background:linear-gradient(#0c0c0e,#060608);
+  box-shadow:inset 0 3px 14px rgba(0,0,0,.9), inset 0 0 0 1px rgba(255,255,255,.04),
+             0 min(2vh,20px) min(5vh,44px) rgba(0,0,0,.6);
+}
+#layer-seg .panel::after{ content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
+  background:linear-gradient(rgba(255,255,255,.06),transparent 42%); }
+#layer-seg .seg-wrap{ position:relative; }
+#layer-seg .seg{
+  font-family:'DSEG7 Classic','DSEG7Classic','Share Tech Mono',monospace; font-weight:700;
+  font-size:min(24vw,32vh); line-height:1; letter-spacing:.06em;
+}
+#layer-seg .ghost{ position:absolute; inset:0; color:color-mix(in srgb, var(--accent) 14%, transparent); }
+#layer-seg .lit{ position:relative; color:var(--accent);
+  text-shadow:0 0 4px var(--accent),0 0 12px var(--accent),
+    0 0 26px color-mix(in srgb, var(--accent) 75%, transparent),
+    0 0 48px color-mix(in srgb, var(--accent) 45%, transparent);
+  animation:segFlick 5s infinite; }
+@keyframes segFlick{ 0%,96%{opacity:1;} 97%{opacity:.94;} 100%{opacity:1;} }
+#layer-seg .sub{ font-family:'Share Tech Mono',monospace; letter-spacing:.3em; opacity:.75; margin-top:2.4vh; color:var(--accent);
+  text-shadow:0 0 12px var(--accent); }
+@media (orientation:landscape){ #layer-seg .seg{ font-size:min(18vw,44vh);} }
+
+/* ================= WORD CLOCK ================= */
+#layer-word .grid{
+  display:grid; gap:min(1.2vw,1.2vh);
+  font-family:'Space Mono','Space Grotesk',monospace; font-weight:700;
+  font-size:min(6.5vw,6vh); letter-spacing:.12em;
+}
+#layer-word .cell{ color:rgba(255,255,255,.10); transition:color .5s, text-shadow .5s; }
+#layer-word .cell.on{ color:#fff; text-shadow:0 0 18px var(--accent); }
+@media (orientation:landscape){ #layer-word .grid{ font-size:min(4vw,7vh);} }
+
+/* ================= CANVAS-ONLY THEMES ================= */
+/* pulse / constellation / rain / solaris / ember render on #bgcanvas; no DOM */
+
+/* ---- weather chip + meta chrome ---- */
+#chrome{ position:fixed; z-index:5; inset:0; pointer-events:none; }
+.corner{ position:absolute; display:flex; align-items:center; gap:10px; font-family:'Space Grotesk',sans-serif;
+  opacity:.9; transition:opacity .4s; }
+#weatherchip{ top:calc(var(--safe-t) + 18px); left:calc(var(--safe-l) + 22px); font-size:clamp(14px,3.6vmin,26px); font-weight:400;}
+#weatherchip .t{ font-weight:700; }
+#datechip{ bottom:calc(var(--safe-b) + 18px); left:calc(var(--safe-l) + 22px); font-size:clamp(13px,3.2vmin,24px); letter-spacing:.06em; text-transform:uppercase; opacity:.75;}
+#nowplaying{ bottom:calc(var(--safe-b) + 18px); right:calc(var(--safe-r) + 22px); font-size:clamp(12px,3vmin,20px); opacity:.8; max-width:40vw; text-align:right; }
+#nowplaying.hidden{ display:none; }
+
+/* ---- top toolbar (auto-hides) ---- */
+#toolbar{ position:fixed; z-index:6; top:calc(var(--safe-t) + 12px); right:calc(var(--safe-r) + 16px);
+  display:flex; gap:10px; transition:opacity .5s, transform .5s; }
+.tbtn{ pointer-events:auto; width:46px; height:46px; border-radius:50%;
+  background:rgba(255,255,255,.09); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+  border:1px solid rgba(255,255,255,.16); color:#fff; font-size:20px; line-height:44px; text-align:center;
+  cursor:pointer; transition:background .2s, transform .1s; }
+.tbtn:active{ transform:scale(.9); }
+.chrome-hidden #toolbar{ opacity:0; transform:translateY(-16px); pointer-events:none; }
+.chrome-hidden .corner{ opacity:.28; }
+
+/* theme name flash + dots */
+#themeflash{ position:fixed; z-index:6; top:50%; left:50%; transform:translate(-50%,-50%);
+  font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:clamp(20px,7vmin,54px);
+  letter-spacing:.1em; text-transform:uppercase; opacity:0; pointer-events:none;
+  text-shadow:0 2px 30px rgba(0,0,0,.6); transition:opacity .25s; }
+#themeflash.show{ opacity:.95; }
+#dots{ position:fixed; z-index:6; bottom:calc(var(--safe-b) + 14px); left:50%; transform:translateX(-50%);
+  display:flex; gap:8px; pointer-events:none; transition:opacity .4s;}
+.dot{ width:7px; height:7px; border-radius:50%; background:rgba(255,255,255,.28); }
+.dot.on{ background:#fff; box-shadow:0 0 10px var(--accent); }
+.chrome-hidden #dots{ opacity:.2; }
+
+/* ---- Settings panel ---- */
+#settings{ position:fixed; z-index:10; inset:0; display:none; align-items:stretch; justify-content:flex-end; }
+#settings.open{ display:flex; }
+#settings .scrim{ position:absolute; inset:0; background:rgba(0,0,0,.5); backdrop-filter:blur(4px); }
+#settings .panel{ position:relative; width:min(420px,88vw); height:100%; overflow-y:auto;
+  background:rgba(18,18,22,.92); backdrop-filter:blur(24px); -webkit-backdrop-filter:blur(24px);
+  border-left:1px solid rgba(255,255,255,.1); padding:calc(var(--safe-t) + 22px) 22px calc(var(--safe-b) + 40px);
+  animation:slidein .35s cubic-bezier(.2,.8,.2,1); pointer-events:auto; }
+@keyframes slidein{ from{ transform:translateX(30px); opacity:0;} to{ transform:none; opacity:1;} }
+#settings h2{ font-family:'Space Grotesk',sans-serif; font-size:22px; margin:0 0 4px; display:flex; justify-content:space-between; align-items:center;}
+#settings .hint{ opacity:.5; font-size:12.5px; margin:0 0 18px; line-height:1.5;}
+.sect{ margin:20px 0 6px; font-size:12px; letter-spacing:.16em; text-transform:uppercase; opacity:.5; }
+.themegrid{ display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
+.themebtn{ pointer-events:auto; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.05);
+  color:#fff; border-radius:14px; padding:12px 10px; text-align:left; cursor:pointer; transition:.15s; }
+.themebtn .n{ font-weight:700; font-size:14px; display:block; }
+.themebtn .d{ opacity:.55; font-size:11px; }
+.themebtn.sel{ border-color:var(--accent); box-shadow:0 0 0 1px var(--accent), 0 0 22px rgba(106,213,255,.25); background:rgba(106,213,255,.08); }
+.row{ display:flex; align-items:center; justify-content:space-between; padding:11px 0; border-bottom:1px solid rgba(255,255,255,.06); gap:12px;}
+.row .lbl{ font-size:14.5px; }
+.row .lbl small{ display:block; opacity:.45; font-size:11px; font-weight:400; }
+/* toggle */
+.tg{ width:50px; height:29px; border-radius:99px; background:rgba(255,255,255,.16); position:relative; cursor:pointer; flex:none; transition:.2s;}
+.tg::after{ content:""; position:absolute; top:3px; left:3px; width:23px; height:23px; border-radius:50%; background:#fff; transition:.2s;}
+.tg.on{ background:var(--accent); }
+.tg.on::after{ left:24px; }
+/* segmented */
+.seg-ctrl{ display:flex; background:rgba(255,255,255,.08); border-radius:10px; padding:3px; }
+.seg-ctrl button{ pointer-events:auto; border:0; background:transparent; color:#fff; padding:6px 12px; border-radius:8px; font-size:13px; cursor:pointer; opacity:.6;}
+.seg-ctrl button.sel{ background:var(--accent); color:#001; opacity:1; font-weight:700;}
+.pill{ pointer-events:auto; display:inline-block; margin:4px 6px 0 0; padding:7px 13px; border-radius:99px;
+  border:1px solid rgba(255,255,255,.16); background:rgba(255,255,255,.05); color:#fff; font-size:13px; cursor:pointer;}
+.pill.sel{ border-color:var(--accent); background:rgba(106,213,255,.12); }
+.note{ font-size:11.5px; opacity:.45; margin-top:8px; line-height:1.5;}
+#installbtn{ display:none; margin-top:14px; width:100%; padding:13px; border-radius:12px; border:0;
+  background:var(--accent); color:#001; font-weight:700; font-size:15px; cursor:pointer; pointer-events:auto;}
+
+/* intro tap-to-start */
+#intro{ position:fixed; z-index:20; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  background:radial-gradient(120% 120% at 50% 30%,#101427,#000); text-align:center; padding:8vw; }
+#intro h1{ font-family:'Sora',sans-serif; font-weight:800; font-size:clamp(34px,11vw,84px); margin:0;
+  background:linear-gradient(120deg,#6ad5ff,#b892ff,#ff8fce); -webkit-background-clip:text; background-clip:text; color:transparent;}
+#intro p{ opacity:.7; max-width:520px; line-height:1.6; font-size:clamp(14px,4vw,18px); }
+#startbtn{ margin-top:26px; padding:15px 34px; border-radius:99px; border:0; font-size:17px; font-weight:700;
+  background:linear-gradient(120deg,#6ad5ff,#b892ff); color:#001; cursor:pointer; box-shadow:0 10px 40px rgba(106,213,255,.3);}
+#intro.gone{ display:none; }
+.badges{ display:flex; gap:14px; margin-top:22px; opacity:.6; font-size:13px; flex-wrap:wrap; justify-content:center;}
+
+/* ---- Light background mode: flip text/glow to dark ---- */
+body.light{ --fg:#15161a; --num:#15161a; color:#15161a; }
+body.light #layer-aurora .sub{ color:#15161a; opacity:.6; }
+body.light #layer-neon .time{ color:#15161a; text-shadow:0 2px 18px rgba(0,0,0,.18); }
+body.light #layer-neon .sub{ color:#15161a; text-shadow:none; }
+body.light #layer-flip .flip-colon{ color:#15161a; }
+body.light #layer-seg{ background:transparent; }
+body.light #layer-seg .ghost{ color:rgba(0,0,0,.08); }
+body.light #layer-word .cell{ color:rgba(0,0,0,.12); }
+body.light #layer-word .cell.on{ color:#15161a; text-shadow:0 0 12px color-mix(in srgb, var(--accent) 60%, transparent); }
+body.light #datechip, body.light #weatherchip, body.light #nowplaying{ color:#15161a; }
+body.light .tbtn{ background:rgba(0,0,0,.06); border-color:rgba(0,0,0,.14); color:#15161a; }
+
+/* shrink wide faces when seconds are shown */
+body.secs #layer-aurora .time{ font-size:min(23vw,32vh); }
+@media (orientation:landscape){ body.secs #layer-aurora .time{ font-size:min(18vw,44vh); } }
+body.secs #layer-seg .seg{ font-size:min(17vw,26vh); }
+@media (orientation:landscape){ body.secs #layer-seg .seg{ font-size:min(14vw,40vh); } }
+
+/* ================= GLASS (holographic glassmorphism) ================= */
+#layer-glass .glasscard{
+  position:relative; padding:min(7vw,7vh) min(9vw,9vh); border-radius:28px; overflow:hidden;
+  background:rgba(255,255,255,.06);
+  backdrop-filter:blur(20px) saturate(180%); -webkit-backdrop-filter:blur(20px) saturate(180%);
+  box-shadow:inset 0 1px 1px rgba(255,255,255,.5), inset 0 -22px 44px rgba(0,0,0,.28), 0 24px 70px rgba(0,0,0,.55);
+  display:flex; flex-direction:column; align-items:center; gap:1.4vh;
+}
+#layer-glass .glasscard::before{ content:""; position:absolute; inset:0; border-radius:inherit; padding:1.6px;
+  background:conic-gradient(from 0deg,#ff2fd0,#7a5cff,#29e7ff,#6dff9e,#ffe14d,#ff2fd0);
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0); -webkit-mask-composite:xor;
+  mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0); mask-composite:exclude;
+  animation:glassSpin 7s linear infinite; filter:saturate(1.3); }
+#layer-glass .glasscard::after{ content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
+  background:linear-gradient(120deg,transparent 20%,rgba(41,231,255,.16) 38%,rgba(255,47,208,.16) 50%,transparent 68%);
+  background-size:250% 250%; mix-blend-mode:screen; animation:glassSheen 8s ease-in-out infinite; }
+@keyframes glassSpin{ to{ transform:rotate(1turn);} }
+@keyframes glassSheen{ 0%,100%{background-position:0% 0%;} 50%{background-position:100% 100%;} }
+#layer-glass .time{ font-family:var(--clockfont),'Space Grotesk',sans-serif; font-weight:700; font-variant-numeric:tabular-nums;
+  font-size:min(24vw,30vh); line-height:1; color:#fff; text-shadow:0 2px 30px rgba(0,0,0,.4); position:relative; z-index:2; }
+#layer-glass .sub{ font-weight:400; letter-spacing:.3em; text-transform:uppercase; opacity:.85; font-size:min(4.5vw,3.4vh); position:relative; z-index:2; }
+@media (orientation:landscape){ #layer-glass .time{ font-size:min(18vw,44vh);} }
+
+/* ================= SYNTHWAVE (grid horizon + chromatic + scanlines) ================= */
+#layer-synth{ background:linear-gradient(#1a0b2e 0%,#2a0e3f 45%,#0d0618 100%); overflow:hidden; }
+#layer-synth .sun{ position:absolute; left:50%; top:34%; width:min(70vw,60vh); height:min(70vw,60vh); transform:translate(-50%,-50%);
+  border-radius:50%; background:radial-gradient(circle,#ff2fd0 0%,#ff7a59 45%,transparent 66%); filter:blur(6px); opacity:.55; }
+#layer-synth .grid{ position:absolute; bottom:0; left:-50%; width:200%; height:52%;
+  background-image:linear-gradient(rgba(255,47,208,.55) 1px,transparent 1px),linear-gradient(90deg,rgba(41,231,255,.55) 1px,transparent 1px);
+  background-size:52px 52px; transform:perspective(340px) rotateX(70deg); transform-origin:bottom;
+  animation:synthFloor 1.4s linear infinite; -webkit-mask-image:linear-gradient(transparent,#000 60%); mask-image:linear-gradient(transparent,#000 60%); }
+@keyframes synthFloor{ to{ background-position:0 52px;} }
+#layer-synth .glitch{ position:relative; z-index:3; font-family:'Orbitron',sans-serif; font-weight:900; font-variant-numeric:tabular-nums;
+  font-size:min(24vw,30vh); line-height:1; color:#eafcff; letter-spacing:.02em; text-shadow:0 0 18px rgba(41,231,255,.5); }
+#layer-synth .glitch::before,#layer-synth .glitch::after{ content:attr(data-time); position:absolute; inset:0; mix-blend-mode:screen; }
+#layer-synth .glitch::before{ color:#ff2f6d; transform:translate(-2px,0); }
+#layer-synth .glitch::after{ color:#29e7ff; transform:translate(2px,0); }
+#layer-synth .glitch.tick{ animation:synthJolt .18s steps(2,end); }
+@keyframes synthJolt{ 0%{clip-path:inset(0 0 0 0);transform:translate(0);} 20%{clip-path:inset(30% 0 40% 0);transform:translate(-4px,0);}
+  40%{clip-path:inset(60% 0 10% 0);transform:translate(4px,0);} 60%{clip-path:inset(10% 0 70% 0);transform:translate(-3px,0);} 100%{clip-path:inset(0 0 0 0);transform:translate(0);} }
+#layer-synth .sub{ position:relative; z-index:3; font-family:'Orbitron',sans-serif; letter-spacing:.34em; opacity:.85; margin-top:.5em; font-size:min(4.2vw,3.2vh); color:#ff8fce; }
+#layer-synth .scan{ position:absolute; inset:0; pointer-events:none; z-index:4;
+  background:repeating-linear-gradient(0deg,rgba(0,0,0,.22) 0 1px,transparent 1px 3px); mix-blend-mode:multiply; }
+
+@media (prefers-reduced-motion: reduce){
+  .flip3d.go .flip-top,.flip3d.go .flip-bottom{ animation-duration:.01s; }
+  #layer-neon .time .fl,#layer-glass .glasscard::before,#layer-glass .glasscard::after,#layer-synth .grid{ animation:none; }
+}
+</style>
+</head>
+<body class="chrome-hidden">
+
+  <canvas id="bgcanvas"></canvas>
+  <canvas id="weatherfx"></canvas>
+
+  <div id="stage">
+    <!-- Aurora (StandBy) -->
+    <div class="layer" id="layer-aurora"><div class="stack">
+      <div class="time" data-time>00:00</div><div class="sub" data-day>MONDAY</div>
+    </div></div>
+
+    <!-- Neon -->
+    <div class="layer" id="layer-neon"><div class="neon-wrap">
+      <div class="time ntime">00:00</div>
+      <div class="time reflect ntime" aria-hidden="true">00:00</div>
+      <div class="sub" data-day>MONDAY</div>
+    </div></div>
+
+    <!-- Flip (3D split-flap; cards built in JS) -->
+    <div class="layer" id="layer-flip"><div class="flip-row" id="flip-row"></div></div>
+
+    <!-- Seven-segment -->
+    <div class="layer" id="layer-seg"><div class="stack">
+      <div class="panel"><div class="seg-wrap">
+        <div class="seg ghost">88:88</div>
+        <div class="seg lit" data-time>00:00</div>
+      </div></div>
+      <div class="sub" data-day>MONDAY</div>
+    </div></div>
+
+    <!-- Word clock -->
+    <div class="layer" id="layer-word"><div class="grid" data-wordgrid></div></div>
+
+    <!-- Glass (holographic) -->
+    <div class="layer" id="layer-glass"><div class="glasscard">
+      <div class="time" data-time>00:00</div><div class="sub" data-day>MONDAY</div>
+    </div></div>
+
+    <!-- Synthwave -->
+    <div class="layer" id="layer-synth">
+      <div class="sun"></div><div class="grid"></div>
+      <div class="stack">
+        <div class="glitch" data-time data-time-attr="1">00:00</div>
+        <div class="sub" data-day>MONDAY</div>
+      </div>
+      <div class="scan"></div>
+    </div>
+  </div>
+
+  <!-- chrome overlays -->
+  <div id="chrome">
+    <div class="corner" id="weatherchip"><span class="ico">·</span> <span class="t">—</span> <span class="cond"></span></div>
+    <div class="corner" id="datechip">—</div>
+    <div class="corner hidden" id="nowplaying"></div>
+  </div>
+
+  <div id="themeflash"></div>
+  <div id="dots"></div>
+
+  <div id="toolbar">
+    <div class="tbtn" id="btn-audio" title="Music reactivity">♪</div>
+    <div class="tbtn" id="btn-full" title="Fullscreen">⤢</div>
+    <div class="tbtn" id="btn-settings" title="Settings">⚙</div>
+  </div>
+
+  <!-- Settings -->
+  <div id="settings">
+    <div class="scrim" data-close></div>
+    <div class="panel">
+      <h2>Lumina <span class="tbtn" data-close style="pointer-events:auto">✕</span></h2>
+      <p class="hint">Swipe left / right anywhere to change face · tap once to show controls.</p>
+
+      <div class="sect">Clock Face</div>
+      <div class="themegrid" id="themegrid"></div>
+
+      <div class="sect">Background</div>
+      <div id="bggrid"></div>
+
+      <div class="sect">Numeral font</div>
+      <div id="fontgrid"></div>
+
+      <div class="sect">Music Reactivity</div>
+      <div class="row"><div class="lbl">Microphone (react to room music)<small>Best cross-platform option on phones</small></div><div class="tg" id="tg-mic"></div></div>
+      <div class="row"><div class="lbl">Play built-in ambient audio<small>Publishes to lock-screen media controls</small></div><div class="tg" id="tg-audio"></div></div>
+      <div class="note" id="audio-note"></div>
+
+      <div class="sect">Weather</div>
+      <div class="row"><div class="lbl">Live weather + sky palette<small>Free Open-Meteo · uses your location</small></div><div class="tg" id="tg-weather"></div></div>
+      <div class="row"><div class="lbl">Units</div><div class="seg-ctrl" id="unit-ctrl"><button data-unit="c" class="sel">°C</button><button data-unit="f">°F</button></div></div>
+      <div class="row"><div class="lbl">Animated weather FX<small>Rain, snow, fog, stars</small></div><div class="tg on" id="tg-wfx"></div></div>
+
+      <div class="sect">Display</div>
+      <div class="row"><div class="lbl">Time format</div><div class="seg-ctrl" id="fmt-ctrl"><button data-fmt="24" class="sel">24h</button><button data-fmt="12">12h</button></div></div>
+      <div class="row"><div class="lbl">Show seconds</div><div class="tg" id="tg-secs"></div></div>
+      <div class="row"><div class="lbl">Keep screen awake<small>Wake Lock · re-armed automatically</small></div><div class="tg on" id="tg-wake"></div></div>
+      <div class="row"><div class="lbl">Auto night dimming<small>Dims + warms after sunset</small></div><div class="tg on" id="tg-night"></div></div>
+      <div class="row"><div class="lbl">Burn-in drift<small>Slowly nudges pixels (OLED safe)</small></div><div class="tg on" id="tg-drift"></div></div>
+
+      <div class="sect">Clock / accent color</div>
+      <div id="swatches"></div>
+      <div class="row"><div class="lbl">Custom color</div><input type="color" id="customcol" value="#6ad5ff" style="width:52px;height:34px;border:none;border-radius:8px;background:none;pointer-events:auto;cursor:pointer" /></div>
+      <div class="row"><div class="lbl">Numerals use<small>Applies to Aurora, Rain &amp; Pulse</small></div><div class="seg-ctrl" id="num-ctrl"><button data-num="default" class="sel">Default</button><button data-num="accent">Accent</button></div></div>
+
+      <button id="installbtn">⬇ Install as app</button>
+      <p class="note" id="ios-note"></p>
+    </div>
+  </div>
+
+  <!-- intro -->
+  <div id="intro">
+    <h1>Lumina</h1>
+    <p>A living full-screen clock that breathes with your music and the sky above you. Fourteen hand-crafted faces — classical &amp; futuristic. Swipe to explore.</p>
+    <button id="startbtn">Tap to begin</button>
+    <div class="badges"><span>iPhone · Android · Desktop</span><span>Works offline</span><span>No account</span></div>
+  </div>
+
+  <audio id="ambient" loop crossorigin="anonymous" playsinline></audio>
+
+<script>
+/* ==== Lumina Clock engine ==== */
+'use strict';
+const $  = (s,r=document)=>r.querySelector(s);
+const $$ = (s,r=document)=>Array.from(r.querySelectorAll(s));
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const lerp=(a,b,t)=>a+(b-a)*t;
+const TAU=Math.PI*2;
+
+/* ---------- persisted settings ---------- */
+const DEFAULTS={
+  theme:'aurora', fmt:'24', secs:false, unit:'c',
+  mic:false, audio:false, weather:false, wfx:true,
+  wake:true, night:true, drift:true,
+  accent:'#6ad5ff', accent2:'#b892ff',
+  bg:'sky', font:'Poppins', numColor:'default'
+};
+let S=Object.assign({},DEFAULTS);
+try{ Object.assign(S, JSON.parse(localStorage.getItem('lumina')||'{}')); }catch(e){}
+const save=()=>{ try{ localStorage.setItem('lumina',JSON.stringify(S)); }catch(e){} };
+
+/* ---------- shared runtime state ---------- */
+const state={
+  now:new Date(),
+  audio:{level:0, bass:0, mid:0, treble:0, beat:0, active:false},
+  weather:null,           // {temp,code,isDay,label,icon,sunrise,sunset}
+  sky:{a:'#0b1020', b:'#1a2140', accent:'#6ad5ff', night:false},
+  w:innerWidth, h:innerHeight, dpr:Math.min(devicePixelRatio||1,2),
+  portrait:innerHeight>=innerWidth,
+  t:0
+};
+
+/* ---------- accent application ---------- */
+function applyAccent(a,b){
+  S.accent=a; S.accent2=b||a;
+  document.documentElement.style.setProperty('--accent',a);
+  document.documentElement.style.setProperty('--accent2',S.accent2);
+}
+applyAccent(S.accent,S.accent2);
+
+/* ---------- backgrounds ---------- */
+const BG={
+  sky:     {label:'Sky (time of day)', type:'sky',  base:'#0b1020'},
+  amoled:  {label:'AMOLED black',      type:'solid',c:'#000000'},
+  charcoal:{label:'Charcoal',          type:'solid',c:'#0b0b0e'},
+  graphite:{label:'Graphite',          type:'grad', a:'#26262b', b:'#050506'},
+  light:   {label:'Light',             type:'solid',c:'#f4f5f7', light:true},
+  paper:   {label:'Paper',             type:'grad', a:'#f3efe6', b:'#e2ddce', light:true},
+  teal:    {label:'Deep teal',         type:'grad', a:'#0F2027', b:'#2C5364'},
+  sunset:  {label:'Sunset',            type:'grad', a:'#FF512F', b:'#DD2476'},
+  violet:  {label:'Violet',            type:'grad', a:'#8E2DE2', b:'#4A00E0'},
+  ocean:   {label:'Ocean',             type:'grad', a:'#43CEA2', b:'#185A9D'},
+  midnight:{label:'Midnight blue',     type:'grad', a:'#0F2027', b:'#000000'}
+};
+const bgDef=()=>BG[S.bg]||BG.sky;
+const isLight=()=>!!bgDef().light;
+function paintBase(ctx){
+  const d=bgDef(), w=state.w, h=state.h;
+  if(d.type==='sky'){ const g=ctx.createLinearGradient(0,0,0,h); g.addColorStop(0,state.sky.a); g.addColorStop(1,state.sky.b); ctx.fillStyle=g; }
+  else if(d.type==='grad'){ const g=ctx.createLinearGradient(0,0,w,h); g.addColorStop(0,d.a); g.addColorStop(1,d.b); ctx.fillStyle=g; }
+  else ctx.fillStyle=d.c;
+  ctx.fillRect(0,0,w,h);
+}
+function applyBg(){
+  const d=bgDef();
+  document.documentElement.style.setProperty('--bg', d.type==='solid'?d.c:(d.a||d.base||'#000'));
+  document.body.classList.toggle('light', !!d.light);
+  applyNum();
+}
+/* ---------- numeral color + font ---------- */
+const FONTS=['Poppins','Sora','Orbitron','Space Grotesk','Chakra Petch','Archivo'];
+function numHex(){ return S.numColor==='accent' ? S.accent : (isLight()?'#15161a':'rgba(255,255,255,.96)'); }
+function applyNum(){ document.documentElement.style.setProperty('--num', numHex()); }
+function applyFont(){ document.documentElement.style.setProperty('--clockfont', `'${S.font}'`); if(typeof glyph!=='undefined'&&glyph) glyph.text=''; /* force glyph rebuild */ }
+applyBg();
+document.documentElement.style.setProperty('--clockfont', `'${S.font}'`);
+
+/* =========================================================
+   AUDIO ENGINE  (mic ambient OR built-in <audio>)
+   Exposes state.audio = {level,bass,mid,treble,beat,active}
+   ========================================================= */
+const AudioEngine=(()=>{
+  let ctx=null, analyser=null, freq=null, time=null, micStream=null, srcNode=null, mode=null;
+  let energyAvg=0, beatCooldown=0;
+  const ambient=$('#ambient');
+
+  async function ensureCtx(){
+    if(!ctx){ ctx=new (window.AudioContext||window.webkitAudioContext)(); }
+    if(ctx.state==='suspended') await ctx.resume();
+    if(!analyser){
+      analyser=ctx.createAnalyser();
+      analyser.fftSize=1024; analyser.smoothingTimeConstant=0.8;
+      freq=new Uint8Array(analyser.frequencyBinCount);
+      time=new Uint8Array(analyser.frequencyBinCount);
+    }
+  }
+  function disconnect(){
+    try{ srcNode&&srcNode.disconnect(); }catch(e){}
+    if(micStream){ micStream.getTracks().forEach(t=>t.stop()); micStream=null; }
+    srcNode=null;
+  }
+  async function useMic(){
+    await ensureCtx(); disconnect();
+    micStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+    srcNode=ctx.createMediaStreamSource(micStream);
+    srcNode.connect(analyser);   // do NOT connect to destination (feedback)
+    mode='mic'; state.audio.active=true;
+  }
+  async function useAmbient(){
+    await ensureCtx(); disconnect();
+    if(!ambient.src) ambient.src=makeAmbientTrack();
+    srcNode=ctx.createMediaElementSource(ambient);
+    srcNode.connect(analyser); analyser.connect(ctx.destination);  // audible
+    await ambient.play().catch(()=>{});
+    mode='audio'; state.audio.active=true;
+    setMediaSession();
+  }
+  function stop(){ disconnect(); state.audio.active=false; mode=null;
+    try{ambient.pause();}catch(e){} }
+
+  // procedurally-generated calm ambient loop as a data-URI WAV (no external asset)
+  let cachedTrack=null;
+  function makeAmbientTrack(){
+    if(cachedTrack) return cachedTrack;
+    const sr=22050, secs=12, n=sr*secs, buf=new Float32Array(n);
+    const notes=[196.0,246.9,293.7,392.0,466.2]; // G3 B3 D4 G4 A#4-ish pad
+    for(let i=0;i<n;i++){
+      const t=i/sr; let s=0;
+      for(let k=0;k<notes.length;k++){
+        const f=notes[k]*(1+0.002*Math.sin(t*0.2+k));
+        s+=Math.sin(TAU*f*t)*(0.12+0.05*Math.sin(t*0.15+k*1.7));
+      }
+      s+=(Math.random()*2-1)*0.015;                 // air
+      const env=0.5-0.5*Math.cos(TAU*(i/n));        // slow fade in/out for seamless loop
+      buf[i]=s*0.18*env;
+    }
+    cachedTrack=floatToWavURL(buf,sr);
+    return cachedTrack;
+  }
+  function floatToWavURL(samples,sr){
+    const n=samples.length, ab=new ArrayBuffer(44+n*2), v=new DataView(ab);
+    const ws=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i));};
+    ws(0,'RIFF'); v.setUint32(4,36+n*2,true); ws(8,'WAVE'); ws(12,'fmt ');
+    v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true);
+    v.setUint32(24,sr,true); v.setUint32(28,sr*2,true); v.setUint16(32,2,true);
+    v.setUint16(34,16,true); ws(36,'data'); v.setUint32(40,n*2,true);
+    for(let i=0;i<n;i++){ let x=clamp(samples[i],-1,1); v.setInt16(44+i*2, x<0?x*32768:x*32767, true); }
+    return URL.createObjectURL(new Blob([ab],{type:'audio/wav'}));
+  }
+  function setMediaSession(){
+    if(!('mediaSession' in navigator)) return;
+    try{
+      navigator.mediaSession.metadata=new MediaMetadata({
+        title:'Lumina Ambient', artist:'Lumina Clock', album:'Live',
+        artwork:[{src:'icons/icon-512.png',sizes:'512x512',type:'image/png'}]
+      });
+      navigator.mediaSession.setActionHandler('play',()=>ambient.play());
+      navigator.mediaSession.setActionHandler('pause',()=>ambient.pause());
+      navigator.mediaSession.playbackState='playing';
+    }catch(e){}
+  }
+
+  function sample(){
+    const a=state.audio;
+    if(!analyser||!state.audio.active){
+      // idle "breathing" so audio-reactive faces still move gently
+      a.level=lerp(a.level,0.12+0.08*Math.sin(state.t*0.9),0.05);
+      a.bass=a.mid=a.treble=a.level; a.beat*=0.9; return;
+    }
+    analyser.getByteFrequencyData(freq);
+    const bins=freq.length, band=(lo,hi)=>{ let s=0,c=0; for(let i=lo;i<hi&&i<bins;i++){s+=freq[i];c++;} return c?(s/c)/255:0; };
+    const bass=band(1,Math.floor(bins*0.08));
+    const mid =band(Math.floor(bins*0.08),Math.floor(bins*0.35));
+    const treble=band(Math.floor(bins*0.35),bins);
+    const level=(bass*1.3+mid+treble*0.7)/3;
+    a.bass=lerp(a.bass,bass,0.5); a.mid=lerp(a.mid,mid,0.4);
+    a.treble=lerp(a.treble,treble,0.4); a.level=lerp(a.level,level,0.4);
+    // beat detection on bass energy
+    energyAvg=lerp(energyAvg,bass,0.08);
+    if(beatCooldown>0)beatCooldown--;
+    if(bass>energyAvg*1.35 && bass>0.25 && beatCooldown===0){ a.beat=1; beatCooldown=10; }
+    else a.beat*=0.85;
+  }
+  return {useMic,useAmbient,stop,sample,ambient};
+})();
+
+/* =========================================================
+   WEATHER ENGINE  (Open-Meteo, no key) + sky palette
+   ========================================================= */
+const Weather=(()=>{
+  const WMO={0:['Clear','☀︎','🌙'],1:['Mainly clear','🌤︎','🌙'],2:['Partly cloudy','⛅︎','☁︎'],3:['Overcast','☁︎','☁︎'],
+    45:['Fog','🌫︎','🌫︎'],48:['Rime fog','🌫︎','🌫︎'],51:['Drizzle','🌦︎','🌧︎'],53:['Drizzle','🌦︎','🌧︎'],55:['Drizzle','🌧︎','🌧︎'],
+    61:['Rain','🌦︎','🌧︎'],63:['Rain','🌧︎','🌧︎'],65:['Heavy rain','🌧︎','🌧︎'],66:['Freezing rain','🌧︎','🌧︎'],67:['Freezing rain','🌧︎','🌧︎'],
+    71:['Snow','🌨︎','🌨︎'],73:['Snow','❄︎','❄︎'],75:['Heavy snow','❄︎','❄︎'],77:['Snow','🌨︎','🌨︎'],
+    80:['Showers','🌦︎','🌧︎'],81:['Showers','🌧︎','🌧︎'],82:['Violent showers','⛈︎','⛈︎'],85:['Snow showers','🌨︎','🌨︎'],86:['Snow showers','❄︎','❄︎'],
+    95:['Thunderstorm','⛈︎','⛈︎'],96:['Thunderstorm','⛈︎','⛈︎'],99:['Thunderstorm','⛈︎','⛈︎']};
+  function describe(code,isDay){ const e=WMO[code]||['—','·','·']; return {label:e[0], icon:isDay?e[1]:e[2]}; }
+  function group(code){ if(code>=95)return'storm'; if((code>=71&&code<=77)||code===85||code===86)return'snow';
+    if((code>=51&&code<=67)||(code>=80&&code<=82))return'rain'; if(code===45||code===48)return'fog';
+    if(code===0||code===1)return'clear'; return'cloud'; }
+
+  function pos(){ return new Promise((res,rej)=>{ if(!navigator.geolocation)return rej();
+    navigator.geolocation.getCurrentPosition(res,rej,{enableHighAccuracy:false,timeout:10000,maximumAge:900000}); }); }
+
+  async function fetchNow(){
+    // cached first
+    try{ const c=JSON.parse(localStorage.getItem('lumina_wx')||'null');
+      if(c && Date.now()-c.ts<20*60000){ set(c.data); } }catch(e){}
+    try{
+      const {coords}=await pos();
+      const u=`https://api.open-meteo.com/v1/forecast?latitude=${coords.latitude}&longitude=${coords.longitude}`+
+        `&current=temperature_2m,weather_code,is_day&daily=sunrise,sunset&timezone=auto&forecast_days=1`;
+      const r=await fetch(u); const j=await r.json();
+      const cur=j.current, d=describe(cur.weather_code,!!cur.is_day);
+      const data={temp:cur.temperature_2m, code:cur.weather_code, isDay:!!cur.is_day, group:group(cur.weather_code),
+        sunrise:j.daily?.sunrise?.[0], sunset:j.daily?.sunset?.[0], ...d};
+      set(data);
+      localStorage.setItem('lumina_wx',JSON.stringify({ts:Date.now(),data}));
+    }catch(e){ /* keep cached / none */ }
+  }
+  function set(data){ state.weather=data; renderChip(); }
+  function renderChip(){
+    const chip=$('#weatherchip'); const w=state.weather;
+    if(!S.weather||!w){ chip.style.display='none'; return; }
+    chip.style.display='flex';
+    const t=S.unit==='f'? Math.round(w.temp*9/5+32)+'°F' : Math.round(w.temp)+'°C';
+    chip.querySelector('.ico').textContent=w.icon;
+    chip.querySelector('.t').textContent=t;
+    chip.querySelector('.cond').textContent=w.label;
+  }
+  return {fetchNow,renderChip,group};
+})();
+
+/* ---------- sky palette from time-of-day (+ weather tint) ---------- */
+function updateSky(){
+  const d=state.now, mins=d.getHours()*60+d.getMinutes();
+  // key palettes: night, dawn, day, dusk
+  const stops=[
+    {t:0,   a:'#05060f', b:'#0b1020', ac:'#8ea2ff'},   // deep night
+    {t:330, a:'#241a3a', b:'#5b3a63', ac:'#ffa17a'},   // pre-dawn
+    {t:390, a:'#f6a15b', b:'#f6d365', ac:'#ff7a59'},   // sunrise
+    {t:720, a:'#2a6df0', b:'#4facfe', ac:'#00f2fe'},   // midday
+    {t:1080,a:'#1b3a6b', b:'#4a7fb5', ac:'#7fd0ff'},   // afternoon
+    {t:1140,a:'#5f2c82', b:'#c7527a', ac:'#ff8fce'},   // sunset
+    {t:1260,a:'#2a1b3d', b:'#3a2352', ac:'#b892ff'},   // dusk
+    {t:1440,a:'#05060f', b:'#0b1020', ac:'#8ea2ff'}
+  ];
+  let i=0; while(i<stops.length-1 && mins>stops[i+1].t) i++;
+  const A=stops[i], B=stops[Math.min(i+1,stops.length-1)];
+  const f=(mins-A.t)/Math.max(1,(B.t-A.t));
+  const mix=(x,y)=>{ const p=parseInt(x.slice(1),16),q=parseInt(y.slice(1),16);
+    const r=Math.round(lerp((p>>16)&255,(q>>16)&255,f)),g=Math.round(lerp((p>>8)&255,(q>>8)&255,f)),b=Math.round(lerp(p&255,q&255,f));
+    return '#'+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1); };
+  state.sky.a=mix(A.a,B.a); state.sky.b=mix(A.b,B.b); state.sky.accent=mix(A.ac,B.ac);
+  // night detection via sunrise/sunset if we have weather, else clock
+  let night=(mins<360||mins>1170);
+  if(state.weather&&state.weather.sunrise){
+    const sr=new Date(state.weather.sunrise), ss=new Date(state.weather.sunset);
+    night = d<sr || d>ss;
+  }
+  state.sky.night=night;
+}
+
+/* ---------- night dimming + burn-in drift ---------- */
+function applyDim(){
+  let dim=1;
+  if(S.night && state.sky.night) dim=0.55;
+  document.documentElement.style.setProperty('--dim',dim);
+}
+let driftX=0,driftY=0;
+function applyDrift(){
+  if(!S.drift){ $('#stage').style.transform=''; return; }
+  const t=state.t*0.04;
+  driftX=Math.sin(t)*10; driftY=Math.cos(t*0.7)*10;
+  $('#stage').style.transform=`translate(${driftX}px,${driftY}px)`;
+}
+
+/* =========================================================
+   TIME helpers
+   ========================================================= */
+const DAYS=['SUNDAY','MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'];
+const MON=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+function timeStr(){
+  const d=state.now; let h=d.getHours(); const m=d.getMinutes(), s=d.getSeconds();
+  let suffix='';
+  if(S.fmt==='12'){ suffix=h>=12?' PM':' AM'; h=h%12||12; }
+  const H=(S.fmt==='12'?String(h):String(h).padStart(2,'0'));
+  let out=`${H}:${String(m).padStart(2,'0')}`;
+  if(S.secs) out+=`:${String(s).padStart(2,'0')}`;
+  return {text:out, suffix, h:d.getHours(), m, s};
+}
+
+/* =========================================================
+   WAKE LOCK / FULLSCREEN / ORIENTATION
+   ========================================================= */
+let wakeLock=null;
+async function requestWake(){
+  if(!S.wake||!('wakeLock'in navigator)) return;
+  try{ wakeLock=await navigator.wakeLock.request('screen');
+    wakeLock.addEventListener('release',()=>{}); }catch(e){}
+}
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible'){ requestWake(); } });
+async function toggleFullscreen(){
+  const el=document.documentElement;
+  try{
+    if(!document.fullscreenElement){ if(el.requestFullscreen) await el.requestFullscreen(); else if(el.webkitRequestFullscreen) el.webkitRequestFullscreen(); }
+    else { if(document.exitFullscreen) await document.exitFullscreen(); }
+  }catch(e){}
+}
+
+/* =========================================================
+   CANVAS setup
+   ========================================================= */
+const bg=$('#bgcanvas'), bgx=bg.getContext('2d');
+const wfx=$('#weatherfx'), wfxx=wfx.getContext('2d');
+function resize(){
+  state.w=innerWidth; state.h=innerHeight; state.portrait=innerHeight>=innerWidth;
+  state.dpr=Math.min(devicePixelRatio||1,2);
+  for(const cv of [bg,wfx]){ cv.width=state.w*state.dpr; cv.height=state.h*state.dpr; }
+  bgx.setTransform(state.dpr,0,0,state.dpr,0,0);
+  wfxx.setTransform(state.dpr,0,0,state.dpr,0,0);
+  if(activeTheme&&activeTheme.layout) activeTheme.layout();
+  buildWordGrid();
+}
+addEventListener('resize',resize);
+screen.orientation&&screen.orientation.addEventListener?.('change',()=>setTimeout(resize,120));
+
+/* =========================================================
+   GLYPH MASK — rasterize the time to sample points/pixels
+   (shared by pulse / constellation / ember / rain-center)
+   ========================================================= */
+const glyph={canvas:document.createElement('canvas'),ctx:null,points:[],text:'',w:0,h:0};
+glyph.ctx=glyph.canvas.getContext('2d',{willReadFrequently:true});
+function buildGlyph(text,step){
+  step=step||6;
+  const H=200, gc=glyph.canvas, gx=glyph.ctx;
+  gx.font=`900 ${H}px ${S.font}, Poppins, sans-serif`;
+  const w=Math.ceil(gx.measureText(text).width)+40;
+  gc.width=w; gc.height=H+60;
+  gx.clearRect(0,0,gc.width,gc.height);
+  gx.fillStyle='#fff'; gx.textBaseline='middle'; gx.textAlign='center';
+  gx.font=`900 ${H}px ${S.font}, Poppins, sans-serif`;
+  gx.fillText(text, gc.width/2, gc.height/2);
+  const img=gx.getImageData(0,0,gc.width,gc.height).data;
+  const pts=[];
+  for(let y=0;y<gc.height;y+=step) for(let x=0;x<gc.width;x+=step){
+    if(img[(y*gc.width+x)*4+3]>128) pts.push({x,y});
+  }
+  glyph.points=pts; glyph.text=text; glyph.w=gc.width; glyph.h=gc.height;
+}
+/* map a glyph-space point into centered screen coords at given target height */
+function glyphToScreen(p,targetH){
+  const scale=targetH/glyph.h;
+  const gw=glyph.w*scale, gh=glyph.h*scale;
+  return { x:(state.w-gw)/2 + p.x*scale, y:(state.h-gh)/2 + p.y*scale };
+}
+
+/* =========================================================
+   THEME registry (populated in next batch)
+   Each theme: {name,desc,kind,init?,draw?(dt),layout?,destroy?}
+   ========================================================= */
+const THEMES={}; const THEME_ORDER=[];
+let activeTheme=null;
+function registerTheme(id,def){ def.id=id; THEMES[id]=def; THEME_ORDER.push(id); }
+
+function setTheme(id,flash){
+  if(!THEMES[id]) id=THEME_ORDER[0];
+  if(activeTheme&&activeTheme.destroy) activeTheme.destroy();
+  // reset canvases + DOM layers
+  bgx.clearRect(0,0,state.w,state.h);
+  $$('.layer').forEach(l=>l.classList.remove('active'));
+  activeTheme=THEMES[id]; S.theme=id; save();
+  const domLayer=$('#layer-'+id);
+  if(domLayer) domLayer.classList.add('active');
+  if(activeTheme.init) activeTheme.init();
+  if(activeTheme.layout) activeTheme.layout();
+  updateThemeUI();
+  if(flash){ const f=$('#themeflash'); f.textContent=activeTheme.name; f.classList.add('show');
+    clearTimeout(f._t); f._t=setTimeout(()=>f.classList.remove('show'),900); }
+}
+function cycleTheme(dir){
+  let i=THEME_ORDER.indexOf(S.theme); i=(i+dir+THEME_ORDER.length)%THEME_ORDER.length;
+  setTheme(THEME_ORDER[i],true);
+}
+
+/* =========================================================
+   MAIN LOOP
+   ========================================================= */
+let last=performance.now();
+function loop(t){
+  const dt=Math.min(0.05,(t-last)/1000); last=t; state.t+=dt;
+  state.now=new Date();
+  AudioEngine.sample();
+  if((t|0)%500<20) updateSky();       // sky ~2x/sec is plenty
+  applyDim();
+  applyDrift();
+  // DOM faces update text; canvas faces draw
+  updateDomFaces();
+  if(activeTheme){
+    if(activeTheme.kind==='canvas'){ if(activeTheme.draw) activeTheme.draw(dt); }
+    else { bgx.clearRect(0,0,state.w,state.h); drawSkyBackdrop(); if(activeTheme.draw) activeTheme.draw(dt); }
+  }
+  drawWeatherFX(dt);
+  updateChrome();
+  requestAnimationFrame(loop);
+}
+
+/* soft sky gradient backdrop for DOM faces (aurora draws its own) */
+function drawSkyBackdrop(){
+  if(activeTheme&&activeTheme.noBackdrop) return;
+  paintBase(bgx);
+}
+/* =========================================================
+   DOM FACE UPDATES (aurora / neon / flip / seg / word)
+   ========================================================= */
+function updateDomFaces(){
+  const T=timeStr();
+  $$('[data-time]').forEach(el=>{ const suf=(S.fmt==='12'&&!el.closest('#layer-seg'))?T.suffix:''; const txt=T.text+suf;
+    el.textContent=txt; if(el.hasAttribute('data-time-attr')) el.setAttribute('data-time',txt); });
+  $$('[data-day]').forEach(el=>{ el.textContent=DAYS[state.now.getDay()]; });
+  const ghost=$('#layer-seg .ghost'); if(ghost) ghost.textContent=S.secs?'88:88:88':'88:88';
+  if(activeTheme){ if(activeTheme.id==='flip') updateFlip(T);
+    else if(activeTheme.id==='word') updateWord();
+    else if(activeTheme.id==='neon') updateNeon(T); }
+}
+/* ---- Neon: wrap colon in a flickering span, drive --glow ---- */
+function updateNeon(T){
+  const txt=T.text+(S.fmt==='12'?T.suffix:'');
+  const html=txt.replace(/:/g,'<span class="fl">:</span>');
+  $$('#layer-neon .ntime').forEach(el=>{ if(el._h!==html){ el.innerHTML=html; el._h=html; } });
+}
+/* ---- Flip: true 3D split-flap ---- */
+function buildFlip(){
+  const row=$('#flip-row'); if(!row||row.dataset.built) return;
+  const cell=(k)=>`<div class="flip3d" data-flip="${k}"><div class="fc top"><span>0</span></div><div class="fc bottom"><span>0</span></div><div class="fc flip-top"><span>0</span></div><div class="fc flip-bottom"><span>0</span></div></div>`;
+  row.innerHTML =
+    `<div class="flip-group">${cell('h0')}${cell('h1')}</div>`+
+    `<div class="flip-colon">:</div>`+
+    `<div class="flip-group">${cell('m0')}${cell('m1')}</div>`+
+    `<div class="flip-colon flip-secs">:</div>`+
+    `<div class="flip-group flip-secs">${cell('s0')}${cell('s1')}</div>`;
+  row.dataset.built='1';
+}
+function flipDigit(card,val){
+  val=String(val); const cur=card.dataset.cur;
+  const top=card.querySelector('.top>span'), bottom=card.querySelector('.bottom>span'),
+        ft=card.querySelector('.flip-top>span'), fb=card.querySelector('.flip-bottom>span');
+  if(cur===undefined){ top.textContent=bottom.textContent=ft.textContent=fb.textContent=val; card.dataset.cur=val; return; }
+  if(cur===val) return;
+  top.textContent=cur; ft.textContent=cur; bottom.textContent=val; fb.textContent=val;
+  card.classList.remove('go'); void card.offsetWidth; card.classList.add('go'); card.dataset.cur=val;
+  const leaf=card.querySelector('.flip-bottom');
+  const done=()=>{ top.textContent=val; ft.textContent=val; card.classList.remove('go'); leaf.removeEventListener('animationend',done); };
+  leaf.addEventListener('animationend',done);
+}
+function updateFlip(T){
+  let hh=T.h; if(S.fmt==='12') hh=hh%12||12;
+  const hs=String(hh).padStart(2,'0'), ms=String(T.m).padStart(2,'0'), ss=String(T.s).padStart(2,'0');
+  const map={h0:hs[0],h1:hs[1],m0:ms[0],m1:ms[1],s0:ss[0],s1:ss[1]};
+  for(const k in map){ const card=$(`[data-flip="${k}"]`); if(card) flipDigit(card,map[k]); }
+}
+
+/* ---------- WORD CLOCK ---------- */
+const WORD_ROWS=[
+  'ITLISBFAMPM','ACQUARTERDC','TWENTYFIVEX','HALFBTENFTO','PASTERUNINE',
+  'ONESIXTHREE','FOURFIVETWO','EIGHTELEVEN','SEVENTWELVE','TENSEOCLOCK'];
+function buildWordGrid(){
+  const g=$('[data-wordgrid]'); if(!g) return;
+  const cols=WORD_ROWS[0].length;
+  g.style.gridTemplateColumns=`repeat(${cols},1fr)`;
+  if(g.childElementCount!==cols*WORD_ROWS.length){
+    g.innerHTML='';
+    WORD_ROWS.forEach(r=>r.split('').forEach(ch=>{ const s=document.createElement('span'); s.className='cell'; s.textContent=ch; g.appendChild(s); }));
+  }
+}
+function wordIndices(){
+  // returns list of [row,startCol,len] words to light for current time (5-min rounding)
+  const d=state.now; let h=d.getHours(), m=d.getMinutes();
+  const on=[[0,0,2]]; // IT
+  on.push([0,3,2]); // IS
+  const M5=Math.round(m/5)*5%60; const past = M5<=30;
+  const hourWords={1:[5,0,3],2:[6,7,3],3:[5,6,5],4:[6,0,4],5:[6,4,4],6:[5,3,3],7:[8,0,5],8:[7,0,5],9:[4,7,4],10:[9,0,3],11:[7,5,6],12:[8,5,6]};
+  const minRows={5:[2,6,4],10:[9,0,3],15:[1,3,7],20:[2,0,6],25:[2,0,10],30:[3,0,4]};
+  let dispH=h%12||12; if(!past) dispH=(dispH%12)+1;
+  const mm=past?M5:60-M5;
+  if(mm!==0 && minRows[mm]){ on.push(minRows[mm]); on.push(past?[4,0,4]:[3,8,2]); } // PAST / TO
+  const hw=hourWords[dispH]; if(hw) on.push(hw);
+  if(mm===0) on.push([9,5,6]); // OCLOCK
+  return on;
+}
+function updateWord(){
+  const g=$('[data-wordgrid]'); if(!g||!g.childElementCount) return;
+  const cols=WORD_ROWS[0].length, cells=g.children;
+  for(let i=0;i<cells.length;i++) cells[i].classList.remove('on');
+  wordIndices().forEach(([r,c,len])=>{ for(let k=0;k<len;k++){ const idx=r*cols+(c+k); if(cells[idx]) cells[idx].classList.add('on'); } });
+}
+
+/* =========================================================
+   CHROME (date chip / now playing) + toolbar autohide
+   ========================================================= */
+function updateChrome(){
+  const d=state.now;
+  $('#datechip').textContent=`${DAYS[d.getDay()]} · ${d.getDate()} ${MON[d.getMonth()]}`;
+  const np=$('#nowplaying');
+  if(state.audio.active){ np.classList.remove('hidden');
+    np.textContent = state.audio._mic? '● listening' : '♪ Lumina Ambient'; }
+  else np.classList.add('hidden');
+}
+
+/* =========================================================
+   WEATHER FX overlay (rain / snow / fog / stars)
+   ========================================================= */
+const fxParts=[];
+function seedFX(){
+  fxParts.length=0; const g=state.weather?state.weather.group:(state.sky.night?'clear':'cloud');
+  let n=0,type=g;
+  if(g==='rain'||g==='storm') n=180;
+  else if(g==='snow') n=140;
+  else if(g==='clear'&&state.sky.night) {type='stars'; n=110;}
+  else if(g==='fog') {type='fog'; n=6;}
+  else n=0;
+  for(let i=0;i<n;i++){
+    fxParts.push({x:Math.random()*state.w,y:Math.random()*state.h,
+      v:type==='snow'?40+Math.random()*40:type==='stars'?0:400+Math.random()*300,
+      s:type==='fog'?120+Math.random()*180:type==='stars'?Math.random()*1.6+0.4:type==='snow'?2+Math.random()*3:1,
+      drift:(Math.random()-0.5)*30, ph:Math.random()*TAU, type});
+  }
+}
+let fxKey='';
+function drawWeatherFX(dt){
+  wfxx.clearRect(0,0,state.w,state.h);
+  if(!S.wfx) return;
+  const g=state.weather?state.weather.group:(state.sky.night?'clear':'cloud');
+  const key=g+'|'+state.sky.night;
+  if(key!==fxKey){ fxKey=key; seedFX(); }
+  const beat=state.audio.beat;
+  for(const p of fxParts){
+    if(p.type==='rain'){
+      p.y+=p.v*dt*(1+beat*0.4); p.x+=p.drift*dt;
+      if(p.y>state.h){ p.y=-10; p.x=Math.random()*state.w; }
+      wfxx.strokeStyle='rgba(160,190,255,0.35)'; wfxx.lineWidth=1;
+      wfxx.beginPath(); wfxx.moveTo(p.x,p.y); wfxx.lineTo(p.x+p.drift*0.03,p.y+12); wfxx.stroke();
+    } else if(p.type==='snow'){
+      p.y+=p.v*dt; p.x+=Math.sin(state.t+p.ph)*14*dt;
+      if(p.y>state.h){ p.y=-6; p.x=Math.random()*state.w; }
+      wfxx.fillStyle='rgba(255,255,255,0.85)'; wfxx.beginPath(); wfxx.arc(p.x,p.y,p.s,0,TAU); wfxx.fill();
+    } else if(p.type==='stars'){
+      const tw=0.5+0.5*Math.sin(state.t*1.5+p.ph);
+      wfxx.fillStyle=`rgba(255,255,255,${0.25+tw*0.6})`;
+      wfxx.beginPath(); wfxx.arc(p.x,p.y,p.s,0,TAU); wfxx.fill();
+    } else if(p.type==='fog'){
+      p.x+=8*dt; if(p.x-p.s>state.w) p.x=-p.s;
+      const grd=wfxx.createRadialGradient(p.x,p.y,0,p.x,p.y,p.s);
+      grd.addColorStop(0,'rgba(200,200,210,0.06)'); grd.addColorStop(1,'rgba(200,200,210,0)');
+      wfxx.fillStyle=grd; wfxx.beginPath(); wfxx.arc(p.x,p.y,p.s,0,TAU); wfxx.fill();
+    }
+  }
+  if(g==='storm' && Math.random()<0.004){ wfxx.fillStyle='rgba(255,255,255,0.5)'; wfxx.fillRect(0,0,state.w,state.h); }
+}
+
+/* =========================================================
+   FACE: AURORA (StandBy) — animated gradient mesh backdrop
+   ========================================================= */
+registerTheme('aurora',{ name:'Aurora', desc:'StandBy gradient mesh', kind:'dom', noBackdrop:true,
+  draw(){
+    const {w,h}=state, T=state.t;
+    paintBase(bgx);
+    // drifting colored blobs (react to audio) — skip on light backgrounds
+    if(!isLight()){
+      const amp=0.6+state.audio.level*0.9;
+      const blobs=[[state.sky.accent,0.28],[S.accent,0.22],[S.accent2,0.24],['#ff8fce',0.18]];
+      bgx.globalCompositeOperation='lighter';
+      blobs.forEach((b,i)=>{
+        const x=w*(0.5+0.4*Math.sin(T*0.15+i*1.7));
+        const y=h*(0.5+0.4*Math.cos(T*0.12+i*2.1));
+        const r=Math.max(w,h)*(0.35+0.1*Math.sin(T*0.3+i))*amp;
+        const grd=bgx.createRadialGradient(x,y,0,x,y,r);
+        grd.addColorStop(0,hexA(b[0],b[1]*(0.8+state.audio.beat*0.6))); grd.addColorStop(1,hexA(b[0],0));
+        bgx.fillStyle=grd; bgx.beginPath(); bgx.arc(x,y,r,0,TAU); bgx.fill();
+      });
+      bgx.globalCompositeOperation='source-over';
+    }
+  }
+});
+function hexA(hex,a){ const p=parseInt(hex.slice(1),16); return `rgba(${(p>>16)&255},${(p>>8)&255},${p&255},${clamp(a,0,1)})`; }
+
+/* FACE: NEON / FLIP / SEG / WORD are DOM-driven (canvas draws sky backdrop) */
+registerTheme('neon',{ name:'Neon', desc:'Glowing tube numerals', kind:'dom',
+  draw(){ const glow=(0.6+state.audio.bass*1.8).toFixed(2); $$('#layer-neon .ntime').forEach(el=>el.style.setProperty('--glow',glow)); }
+});
+registerTheme('flip',{ name:'Flip', desc:'3D split-flap cards', kind:'dom', init(){ buildFlip(); } });
+registerTheme('seg',{ name:'Seven-Seg', desc:'Recessed LED panel', kind:'dom' });
+registerTheme('word',{ name:'Word', desc:'Time spelled in words', kind:'dom', init(){ buildWordGrid(); updateWord(); } });
+registerTheme('glass',{ name:'Glass', desc:'Holographic glass card', kind:'dom' });
+
+/* =========================================================
+   FACE: ANALOG — metallic bezel, weighted sweeping hands
+   ========================================================= */
+registerTheme('analog',{ name:'Analog', desc:'Metallic sweep hands', kind:'canvas',
+  draw(){
+    const {w,h}=state; paintBase(bgx);
+    const cx=w/2, cy=h/2, R=Math.min(w,h)*0.42, light=isLight();
+    bgx.save();
+    let g=bgx.createLinearGradient(cx,cy-R,cx,cy+R);
+    g.addColorStop(0,'#e8e8ec'); g.addColorStop(.49,'#82828a'); g.addColorStop(.5,'#c6c6ce'); g.addColorStop(1,'#484850');
+    bgx.beginPath(); bgx.arc(cx,cy,R,0,TAU); bgx.fillStyle=g;
+    bgx.shadowColor='rgba(0,0,0,.5)'; bgx.shadowBlur=R*0.08; bgx.shadowOffsetY=R*0.03; bgx.fill();
+    bgx.shadowBlur=0; bgx.shadowOffsetY=0;
+    const fr=R*0.9, f=bgx.createRadialGradient(cx,cy-fr*0.3,fr*0.1,cx,cy,fr);
+    if(light){ f.addColorStop(0,'#ffffff'); f.addColorStop(1,'#e2e2ea'); } else { f.addColorStop(0,'#1b1d26'); f.addColorStop(1,'#0a0b10'); }
+    bgx.beginPath(); bgx.arc(cx,cy,fr,0,TAU); bgx.fillStyle=f; bgx.fill();
+    for(let i=0;i<60;i++){ const a=i*Math.PI/30, major=i%5===0, r1=fr*0.94, r2=r1-(major?fr*0.08:fr*0.04);
+      bgx.beginPath(); bgx.moveTo(cx+Math.sin(a)*r1,cy-Math.cos(a)*r1); bgx.lineTo(cx+Math.sin(a)*r2,cy-Math.cos(a)*r2);
+      bgx.lineWidth=major?R*0.014:R*0.006; bgx.lineCap='round';
+      bgx.strokeStyle= major?(light?'#222':S.accent):(light?'#999':'rgba(255,255,255,.4)'); bgx.stroke(); }
+    const now=state.now, s=now.getSeconds()+now.getMilliseconds()/1000, m=now.getMinutes()+s/60, hr=now.getHours()%12+m/60;
+    const dark=light?'#1a1a1e':'#f0f0f4';
+    const hand=(ang,len,wd,col,tail,glow)=>{ bgx.save(); bgx.translate(cx,cy); bgx.rotate(ang); bgx.lineCap='round'; bgx.lineWidth=wd; bgx.strokeStyle=col;
+      if(glow){ bgx.shadowColor=col; bgx.shadowBlur=R*0.06; } else { bgx.shadowColor='rgba(0,0,0,.35)'; bgx.shadowBlur=R*0.03; bgx.shadowOffsetX=R*0.008; bgx.shadowOffsetY=R*0.014; }
+      bgx.beginPath(); bgx.moveTo(0,tail); bgx.lineTo(0,-len); bgx.stroke(); bgx.restore(); };
+    hand(hr*Math.PI/6, fr*0.5, R*0.028, dark, R*0.07,false);
+    hand(m*Math.PI/30, fr*0.72, R*0.02, dark, R*0.10,false);
+    hand(s*Math.PI/30, fr*0.82, R*0.008, S.accent, R*0.16,true);
+    bgx.beginPath(); bgx.arc(cx,cy,R*0.03,0,TAU); bgx.fillStyle=dark; bgx.fill();
+    bgx.beginPath(); bgx.arc(cx,cy,R*0.013*(1+state.audio.beat*0.6),0,TAU); bgx.fillStyle=S.accent; bgx.fill();
+    bgx.restore();
+  }
+});
+
+/* =========================================================
+   FACE: HUD — Tron concentric glowing rings (h/m/s)
+   ========================================================= */
+registerTheme('hud',{ name:'HUD', desc:'Tron glowing rings', kind:'canvas',
+  draw(){
+    const {w,h}=state; paintBase(bgx);
+    const cx=w/2, cy=h/2, R=Math.min(w,h)*0.40;
+    const now=state.now, sf=(now.getSeconds()+now.getMilliseconds()/1000)/60, m=(now.getMinutes()+sf)/60, hr=(now.getHours()%12+m)/12;
+    const arc=(r,frac,color,wd)=>{ bgx.beginPath(); bgx.strokeStyle=color; bgx.lineWidth=wd; bgx.lineCap='round';
+      bgx.shadowColor=color; bgx.shadowBlur=16+state.audio.level*24; bgx.arc(cx,cy,r,-Math.PI/2,-Math.PI/2+frac*TAU); bgx.stroke(); bgx.shadowBlur=0; };
+    [R,R*0.8,R*0.6].forEach(r=>{ bgx.beginPath(); bgx.strokeStyle='rgba(120,180,255,.08)'; bgx.lineWidth=R*0.03; bgx.arc(cx,cy,r,0,TAU); bgx.stroke(); });
+    arc(R,hr,S.accent2,R*0.03); arc(R*0.8,m,S.accent,R*0.03); arc(R*0.6,sf,'#ff8fce',R*0.024);
+    for(let i=0;i<60;i++){ const a=i/60*TAU, big=i%5===0, r1=R*1.1, l=big?R*0.06:R*0.03;
+      bgx.beginPath(); bgx.moveTo(cx+Math.cos(a)*r1,cy+Math.sin(a)*r1); bgx.lineTo(cx+Math.cos(a)*(r1-l),cy+Math.sin(a)*(r1-l));
+      bgx.strokeStyle=big?'rgba(41,231,255,.6)':'rgba(41,231,255,.22)'; bgx.lineWidth=1; bgx.stroke(); }
+    bgx.save(); bgx.translate(cx,cy); bgx.rotate(state.t*0.25); bgx.setLineDash([2,14]);
+    bgx.strokeStyle='rgba(41,231,255,.5)'; bgx.lineWidth=1; bgx.beginPath(); bgx.arc(0,0,R*0.42,0,TAU); bgx.stroke(); bgx.setLineDash([]); bgx.restore();
+    const T=timeStr(); bgx.textAlign='center'; bgx.textBaseline='middle';
+    bgx.font=`700 ${R*0.26}px Orbitron, 'Space Grotesk', sans-serif`; bgx.fillStyle='#eafcff'; bgx.shadowColor=S.accent; bgx.shadowBlur=18;
+    bgx.fillText(T.text, cx, cy); bgx.shadowBlur=0;
+    const d=state.now; bgx.font=`400 ${R*0.07}px 'Space Grotesk', sans-serif`; bgx.fillStyle='rgba(234,252,255,.7)';
+    bgx.fillText(DAYS[d.getDay()]+' · '+d.getDate()+' '+MON[d.getMonth()], cx, cy+R*0.22);
+    bgx.textAlign='left'; bgx.textBaseline='alphabetic';
+  }
+});
+
+/* =========================================================
+   FACE: SYNTHWAVE — grid horizon + chromatic aberration + scanlines
+   ========================================================= */
+let synthLastS=-1;
+registerTheme('synth',{ name:'Synthwave', desc:'Neon grid + glitch', kind:'dom', noBackdrop:true,
+  draw(){ const el=$('#layer-synth .glitch'); if(!el) return; const s=state.now.getSeconds();
+    if(s!==synthLastS){ synthLastS=s; el.classList.remove('tick'); void el.offsetWidth; el.classList.add('tick'); } }
+});
+
+/* helper: ensure glyph matches current time text */
+function syncGlyph(step){ const T=timeStr().text; if(glyph.text!==T||glyph._step!==step){ buildGlyph(T,step); glyph._step=step; return true; } return false; }
+function fillSky(){ paintBase(bgx); }
+
+/* =========================================================
+   FACE: PULSE — dot-matrix digits that dance to the spectrum
+   ========================================================= */
+registerTheme('pulse',{ name:'Pulse', desc:'Equalizer digits', kind:'canvas',
+  draw(){
+    fillSky();
+    const {w,h}=state; const targetH=Math.min(h*0.5, w*0.32);
+    syncGlyph(9);
+    // bottom spectrum bars
+    const bars=48, bw=w/bars;
+    for(let i=0;i<bars;i++){
+      const band = state.audio.active? sampleBand(i/bars) : (0.15+0.12*Math.sin(state.t*2+i*0.4));
+      const bh=band*h*0.4;
+      bgx.fillStyle=hexA(mixHex(S.accent,S.accent2,i/bars), 0.5);
+      bgx.fillRect(i*bw+1, h-bh, bw-2, bh);
+    }
+    // dot-matrix time
+    const scale=targetH/glyph.h, gw=glyph.w*scale, gh=glyph.h*scale;
+    const ox=(w-gw)/2, oy=(h-gh)/2 - h*0.05;
+    for(const p of glyph.points){
+      const x=ox+p.x*scale, y=oy+p.y*scale;
+      const band = state.audio.active? sampleBand(p.x/glyph.w) : 0.4;
+      const r=scale*3.1*(0.7+band*0.9+state.audio.beat*0.4);
+      bgx.fillStyle=hexA(mixHex(S.accent,S.accent2,p.y/glyph.h), 0.9);
+      bgx.beginPath(); bgx.arc(x,y,r,0,TAU); bgx.fill();
+    }
+  }
+});
+function sampleBand(f){ const a=state.audio; if(f<0.4)return a.bass*(1.1-f); if(f<0.75)return a.mid; return a.treble; }
+function mixHex(x,y,f){ const p=parseInt(x.slice(1),16),q=parseInt(y.slice(1),16);
+  const r=Math.round(lerp((p>>16)&255,(q>>16)&255,f)),g=Math.round(lerp((p>>8)&255,(q>>8)&255,f)),b=Math.round(lerp(p&255,q&255,f));
+  return '#'+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1); }
+
+/* =========================================================
+   FACE: CONSTELLATION — stars form the digits + starfield
+   ========================================================= */
+let starField=[];
+registerTheme('constellation',{ name:'Constellation', desc:'Stars draw the time', kind:'canvas',
+  init(){ starField=[]; for(let i=0;i<160;i++) starField.push({x:Math.random(),y:Math.random(),s:Math.random()*1.4+0.3,ph:Math.random()*TAU}); },
+  draw(){
+    const {w,h}=state;
+    // deep space bg
+    const g=bgx.createRadialGradient(w/2,h*0.4,0,w/2,h*0.4,Math.max(w,h));
+    g.addColorStop(0,'#0a1030'); g.addColorStop(1,'#03040c'); bgx.fillStyle=g; bgx.fillRect(0,0,w,h);
+    // nebula glow with bass
+    const nb=hexA(S.accent2,0.10+state.audio.bass*0.18);
+    const ng=bgx.createRadialGradient(w*0.5,h*0.45,0,w*0.5,h*0.45,w*0.6);
+    ng.addColorStop(0,nb); ng.addColorStop(1,'rgba(0,0,0,0)'); bgx.fillStyle=ng; bgx.fillRect(0,0,w,h);
+    // background stars
+    for(const s of starField){ const tw=0.4+0.6*Math.sin(state.t*1.4+s.ph+state.audio.beat*3);
+      bgx.fillStyle=`rgba(255,255,255,${0.25+tw*0.5})`; bgx.beginPath(); bgx.arc(s.x*w,s.y*h,s.s,0,TAU); bgx.fill(); }
+    // constellation of the time
+    syncGlyph(16);
+    const targetH=Math.min(h*0.42,w*0.3), scale=targetH/glyph.h, gw=glyph.w*scale, gh=glyph.h*scale;
+    const ox=(w-gw)/2, oy=(h-gh)/2;
+    const pts=glyph.points;
+    bgx.strokeStyle=hexA(S.accent,0.35); bgx.lineWidth=1;
+    for(let i=0;i<pts.length;i++){
+      const a=pts[i]; const ax=ox+a.x*scale, ay=oy+a.y*scale;
+      if(i%3===0 && i+1<pts.length){ const b=pts[i+1]; bgx.beginPath(); bgx.moveTo(ax,ay); bgx.lineTo(ox+b.x*scale,oy+b.y*scale); bgx.stroke(); }
+      const tw=0.6+0.4*Math.sin(state.t*2+i);
+      bgx.fillStyle=hexA('#eaf0ff',0.85*tw); bgx.beginPath(); bgx.arc(ax,ay,scale*2.4*(1+state.audio.beat*0.5),0,TAU); bgx.fill();
+      bgx.fillStyle=hexA(S.accent,0.4); bgx.beginPath(); bgx.arc(ax,ay,scale*4,0,TAU); bgx.fill();
+    }
+  }
+});
+
+/* =========================================================
+   FACE: CHROMA RAIN — matrix waterfall, time held crisp
+   ========================================================= */
+let rainCols=[];
+registerTheme('rain',{ name:'Chroma Rain', desc:'Matrix, but beautiful', kind:'canvas', init(){ rainCols=[]; },
+  draw(dt){
+    const {w,h}=state;
+    bgx.fillStyle='rgba(3,4,10,0.22)'; bgx.fillRect(0,0,w,h); // trails
+    const fs=Math.max(14, Math.min(28, w/40)); const cols=Math.floor(w/fs);
+    if(rainCols.length!==cols){ rainCols=Array.from({length:cols},()=>({y:Math.random()*h, sp:(0.3+Math.random())*fs})); }
+    bgx.font=`${fs}px 'Space Mono', monospace`; bgx.textAlign='center';
+    const chars='0123456789ABCDEF<>/*+=';
+    const spd=1+state.audio.level*2;
+    for(let i=0;i<cols;i++){ const c=rainCols[i]; c.y+=c.sp*spd*dt*8;
+      if(c.y>h+fs){ c.y=-fs*Math.random()*20; }
+      const ch=chars[(Math.random()*chars.length)|0];
+      bgx.fillStyle=hexA(mixHex('#39ff14',S.accent,(i/cols)),0.9); bgx.fillText(ch,i*fs+fs/2,c.y);
+      bgx.fillStyle='rgba(200,255,210,0.9)'; bgx.fillText(ch,i*fs+fs/2,c.y-fs);
+    }
+    // crisp centered time
+    const T=timeStr(); const size=Math.min(h*0.34,w*0.22);
+    bgx.textAlign='center'; bgx.textBaseline='middle'; bgx.font=`900 ${size}px ${S.font}, Poppins, sans-serif`;
+    bgx.shadowColor=S.accent; bgx.shadowBlur=30+state.audio.bass*40;
+    bgx.fillStyle = S.numColor==='accent'? S.accent : (isLight()?'#15161a':'#eafff0'); bgx.fillText(T.text, w/2, h/2);
+    bgx.shadowBlur=0; bgx.textBaseline='alphabetic';
+  }
+});
+
+/* =========================================================
+   FACE: SOLARIS — orrery; planets encode h / m / s
+   ========================================================= */
+let stars2=[];
+registerTheme('solaris',{ name:'Solaris', desc:'Time told by orbits', kind:'canvas',
+  init(){ stars2=[]; for(let i=0;i<120;i++) stars2.push({x:Math.random(),y:Math.random(),s:Math.random()*1.2+0.2,ph:Math.random()*TAU}); },
+  draw(){
+    const {w,h}=state, cx=w/2, cy=h/2, R=Math.min(w,h)*0.42;
+    bgx.fillStyle='#03030a'; bgx.fillRect(0,0,w,h);
+    for(const s of stars2){ bgx.fillStyle=`rgba(255,255,255,${0.2+0.5*Math.sin(state.t+s.ph)})`; bgx.beginPath(); bgx.arc(s.x*w,s.y*h,s.s,0,TAU); bgx.fill(); }
+    const d=state.now, sec=d.getSeconds()+d.getMilliseconds()/1000, min=d.getMinutes()+sec/60, hr=(d.getHours()%12)+min/60;
+    // central sun colored by sky
+    const sunR=R*0.12*(1+state.audio.bass*0.3);
+    const sg=bgx.createRadialGradient(cx,cy,0,cx,cy,sunR*2.4);
+    sg.addColorStop(0,state.sky.accent); sg.addColorStop(0.5,hexA(state.sky.accent,0.5)); sg.addColorStop(1,'rgba(0,0,0,0)');
+    bgx.fillStyle=sg; bgx.beginPath(); bgx.arc(cx,cy,sunR*2.4,0,TAU); bgx.fill();
+    bgx.fillStyle='#fff'; bgx.beginPath(); bgx.arc(cx,cy,sunR,0,TAU); bgx.fill();
+    const rings=[{r:R*0.45,a:hr/12,col:S.accent2,sz:R*0.05,band:'bass'},
+                 {r:R*0.7,a:min/60,col:S.accent,sz:R*0.038,band:'mid'},
+                 {r:R*0.95,a:sec/60,col:'#ff8fce',sz:R*0.028,band:'treble'}];
+    rings.forEach(rg=>{
+      bgx.strokeStyle='rgba(255,255,255,0.12)'; bgx.lineWidth=1; bgx.beginPath(); bgx.arc(cx,cy,rg.r,0,TAU); bgx.stroke();
+      const ang=-Math.PI/2 + rg.a*TAU; const px=cx+Math.cos(ang)*rg.r, py=cy+Math.sin(ang)*rg.r;
+      // trail
+      bgx.strokeStyle=hexA(rg.col,0.4); bgx.lineWidth=rg.sz*0.6; bgx.beginPath(); bgx.arc(cx,cy,rg.r,ang-0.5,ang); bgx.stroke();
+      const pulse=1+state.audio[rg.band]*0.7+state.audio.beat*0.3;
+      bgx.fillStyle=hexA(rg.col,0.35); bgx.beginPath(); bgx.arc(px,py,rg.sz*2*pulse,0,TAU); bgx.fill();
+      bgx.fillStyle=rg.col; bgx.beginPath(); bgx.arc(px,py,rg.sz*pulse,0,TAU); bgx.fill();
+    });
+  }
+});
+
+/* =========================================================
+   FACE: EMBER — glowing particles converge into the digits
+   ========================================================= */
+let embers=[];
+registerTheme('ember',{ name:'Ember', desc:'Digits of drifting sparks', kind:'canvas',
+  init(){ embers=[]; syncGlyph(7); assignEmbers(true); },
+  layout(){ syncGlyph(7); assignEmbers(true); },
+  draw(dt){
+    const {w,h}=state;
+    bgx.fillStyle='rgba(4,3,8,0.28)'; bgx.fillRect(0,0,w,h);
+    if(syncGlyph(7)) assignEmbers(false);
+    const up=state.audio.bass*220, spark=state.audio.treble;
+    bgx.globalCompositeOperation='lighter';
+    for(const e of embers){
+      const t=glyphToScreen(e.target, Math.min(h*0.44,w*0.3));
+      e.vx+=(t.x-e.x)*6*dt; e.vy+=(t.y-e.y)*6*dt - up*dt*e.rand;
+      e.vx*=0.9; e.vy*=0.9; e.x+=e.vx*dt*8; e.y+=e.vy*dt*8;
+      const flick=0.6+0.4*Math.sin(state.t*8+e.ph)+spark;
+      const r=e.r*(1+state.audio.beat*0.6);
+      const col=mixHex('#ff7a18','#ffd15c',e.rand);
+      bgx.fillStyle=hexA(col, clamp(0.5*flick,0,0.95));
+      bgx.beginPath(); bgx.arc(e.x,e.y,r,0,TAU); bgx.fill();
+    }
+    bgx.globalCompositeOperation='source-over';
+  }
+});
+function assignEmbers(reset){
+  const pts=glyph.points, N=Math.min(pts.length, 900);
+  if(reset||embers.length===0){ embers=[]; for(let i=0;i<N;i++){ const p=pts[(i*pts.length/N)|0];
+    embers.push({x:Math.random()*state.w,y:state.h+Math.random()*100,vx:0,vy:0,target:p,r:1.6+Math.random()*1.6,ph:Math.random()*TAU,rand:Math.random()}); } }
+  else { for(let i=0;i<embers.length;i++){ embers[i].target=pts[(i*pts.length/embers.length)|0]; } }
+}
+/* =========================================================
+   SETTINGS UI
+   ========================================================= */
+const ACCENTS=[['#6ad5ff','#b892ff'],['#ff2e97','#ff6ec7'],['#39ff14','#00e5a8'],['#ffb000','#ff7a18'],
+  ['#00e5ff','#0088ff'],['#ff10f0','#12fff7'],['#ffffff','#c9d4ff'],['#ff4d00','#ffd166']];
+function buildThemeGrid(){
+  const grid=$('#themegrid'); grid.innerHTML='';
+  THEME_ORDER.forEach(id=>{ const t=THEMES[id];
+    const b=document.createElement('button'); b.className='themebtn'+(id===S.theme?' sel':''); b.dataset.theme=id;
+    b.innerHTML=`<span class="n">${t.name}</span><span class="d">${t.desc}</span>`;
+    b.onclick=()=>setTheme(id,true); grid.appendChild(b); });
+}
+function buildSwatches(){
+  const sw=$('#swatches'); sw.innerHTML='';
+  ACCENTS.forEach(([a,b])=>{ const el=document.createElement('button'); el.className='pill'+(a===S.accent?' sel':'');
+    el.style.cssText=`background:linear-gradient(120deg,${a},${b});color:#001;font-weight:700;border:none`;
+    el.textContent=' '; el.style.width='40px';
+    el.onclick=()=>{ applyAccent(a,b); applyNum(); save(); buildSwatches(); $('#customcol').value=a; }; sw.appendChild(el); });
+}
+function buildBgPills(){
+  const box=$('#bggrid'); box.innerHTML='';
+  Object.keys(BG).forEach(id=>{ const d=BG[id];
+    const b=document.createElement('button'); b.className='pill'+(id===S.bg?' sel':''); b.dataset.bg=id; b.textContent=d.label;
+    // little preview swatch
+    const prev = d.type==='solid'?d.c : d.type==='grad'?`linear-gradient(120deg,${d.a},${d.b})`:'linear-gradient(120deg,#1a2140,#4facfe)';
+    b.style.borderLeft='10px solid transparent'; b.style.background=`linear-gradient(90deg, ${d.type==='solid'?d.c:(d.a||'#12203a')} 0 14px, rgba(255,255,255,.05) 14px)`;
+    b.onclick=()=>{ S.bg=id; applyBg(); save(); buildBgPills(); }; box.appendChild(b); });
+}
+function buildFontPills(){
+  const box=$('#fontgrid'); box.innerHTML='';
+  FONTS.forEach(f=>{ const b=document.createElement('button'); b.className='pill'+(f===S.font?' sel':''); b.dataset.font=f;
+    b.textContent=f; b.style.fontFamily=`'${f}',sans-serif`;
+    b.onclick=()=>{ S.font=f; applyFont(); save(); buildFontPills(); }; box.appendChild(b); });
+}
+function buildDots(){ const d=$('#dots'); d.innerHTML=''; THEME_ORDER.forEach(id=>{ const s=document.createElement('span'); s.className='dot'+(id===S.theme?' on':''); d.appendChild(s); }); }
+function updateThemeUI(){ $$('.themebtn').forEach(b=>b.classList.toggle('sel',b.dataset.theme===S.theme));
+  $$('#dots .dot').forEach((d,i)=>d.classList.toggle('on',THEME_ORDER[i]===S.theme)); }
+function setTg(id,on){ $(id).classList.toggle('on',!!on); }
+function setSeg(sel,val,attr){ $$(sel+' button').forEach(b=>b.classList.toggle('sel',b.dataset[attr]===val)); }
+
+function refreshUI(){
+  buildThemeGrid(); buildSwatches(); buildDots(); buildBgPills(); buildFontPills();
+  setTg('#tg-mic',S.mic); setTg('#tg-audio',S.audio); setTg('#tg-weather',S.weather); setTg('#tg-wfx',S.wfx);
+  setTg('#tg-secs',S.secs); setTg('#tg-wake',S.wake); setTg('#tg-night',S.night); setTg('#tg-drift',S.drift);
+  setSeg('#unit-ctrl',S.unit,'unit'); setSeg('#fmt-ctrl',S.fmt,'fmt'); setSeg('#num-ctrl',S.numColor,'num');
+  const cc=$('#customcol'); if(cc) cc.value=S.accent;
+}
+
+/* toggle handlers */
+function onTg(id,key,after){ $(id).addEventListener('click',async()=>{ S[key]=!S[key]; setTg(id,S[key]); save(); if(after) await after(S[key]); }); }
+onTg('#tg-wfx','wfx'); onTg('#tg-secs','secs',(v)=>document.body.classList.toggle('secs',v)); onTg('#tg-drift','drift',(v)=>{ if(!v)$('#stage').style.transform=''; });
+onTg('#tg-night','night'); onTg('#tg-wake','wake',(v)=>{ if(v)requestWake(); else if(wakeLock){wakeLock.release();wakeLock=null;} });
+
+$('#tg-mic').addEventListener('click',async()=>{
+  const want=!S.mic;
+  if(want){ try{ await AudioEngine.useMic(); state.audio._mic=true; S.mic=true; S.audio=false; setTg('#tg-audio',false);
+      AudioEngine.ambient.pause(); } catch(e){ S.mic=false; noteAudio('Microphone permission was blocked. Enable it in browser settings.'); } }
+  else { AudioEngine.stop(); S.mic=false; state.audio._mic=false; }
+  setTg('#tg-mic',S.mic); save();
+});
+$('#tg-audio').addEventListener('click',async()=>{
+  const want=!S.audio;
+  if(want){ try{ await AudioEngine.useAmbient(); state.audio._mic=false; S.audio=true; S.mic=false; setTg('#tg-mic',false); }
+    catch(e){ S.audio=false; } }
+  else { AudioEngine.stop(); S.audio=false; }
+  setTg('#tg-audio',S.audio); save();
+});
+$('#tg-weather').addEventListener('click',async()=>{
+  S.weather=!S.weather; setTg('#tg-weather',S.weather); save();
+  if(S.weather){ await Weather.fetchNow(); } Weather.renderChip();
+});
+function noteAudio(m){ $('#audio-note').textContent=m||''; }
+
+/* segmented controls */
+$('#unit-ctrl').addEventListener('click',e=>{ if(e.target.dataset.unit){ S.unit=e.target.dataset.unit; setSeg('#unit-ctrl',S.unit,'unit'); save(); Weather.renderChip(); } });
+$('#fmt-ctrl').addEventListener('click',e=>{ if(e.target.dataset.fmt){ S.fmt=e.target.dataset.fmt; setSeg('#fmt-ctrl',S.fmt,'fmt'); save(); } });
+$('#num-ctrl').addEventListener('click',e=>{ if(e.target.dataset.num){ S.numColor=e.target.dataset.num; setSeg('#num-ctrl',S.numColor,'num'); applyNum(); save(); } });
+function lighten(hex,amt){ const p=parseInt(hex.slice(1),16); const r=clamp(((p>>16)&255)+amt,0,255),g=clamp(((p>>8)&255)+amt,0,255),b=clamp((p&255)+amt,0,255); return '#'+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1); }
+$('#customcol').addEventListener('input',e=>{ const c=e.target.value; applyAccent(c, lighten(c,40)); applyNum(); save(); $$('#swatches .pill').forEach(p=>p.classList.remove('sel')); });
+
+/* settings open/close */
+$('#btn-settings').addEventListener('click',()=>{ $('#settings').classList.add('open'); refreshUI(); });
+$$('[data-close]').forEach(el=>el.addEventListener('click',()=>$('#settings').classList.remove('open')));
+$('#btn-full').addEventListener('click',toggleFullscreen);
+$('#btn-audio').addEventListener('click',()=>{ // quick toggle: mic first, else ambient
+  if(state.audio.active){ AudioEngine.stop(); S.mic=S.audio=false; }
+  else { $('#tg-mic').click(); }
+  save();
+});
+
+/* =========================================================
+   GESTURES — swipe faces, tap toggles chrome
+   ========================================================= */
+let sx=0,sy=0,st=0,moved=false;
+addEventListener('pointerdown',e=>{ if($('#settings').classList.contains('open'))return; sx=e.clientX; sy=e.clientY; st=Date.now(); moved=false; });
+addEventListener('pointermove',e=>{ if(Math.abs(e.clientX-sx)>10||Math.abs(e.clientY-sy)>10) moved=true; });
+addEventListener('pointerup',e=>{
+  if($('#settings').classList.contains('open'))return;
+  if(e.target.closest('#toolbar'))return;
+  const dx=e.clientX-sx, dy=e.clientY-sy, dtm=Date.now()-st;
+  if(Math.abs(dx)>60 && Math.abs(dx)>Math.abs(dy)){ cycleTheme(dx<0?1:-1); }
+  else if(!moved && dtm<300){ toggleChrome(); }
+});
+let chromeTimer=null;
+function toggleChrome(){ document.body.classList.toggle('chrome-hidden'); armChromeHide(); }
+function armChromeHide(){ clearTimeout(chromeTimer); if(!document.body.classList.contains('chrome-hidden'))
+  chromeTimer=setTimeout(()=>document.body.classList.add('chrome-hidden'),6000); }
+addEventListener('keydown',e=>{ if(e.key==='ArrowRight')cycleTheme(1); else if(e.key==='ArrowLeft')cycleTheme(-1);
+  else if(e.key===' '){toggleChrome();e.preventDefault();} else if(e.key.toLowerCase()==='f')toggleFullscreen(); });
+
+/* =========================================================
+   PWA install + iOS hint
+   ========================================================= */
+let deferredPrompt=null;
+addEventListener('beforeinstallprompt',e=>{ e.preventDefault(); deferredPrompt=e; $('#installbtn').style.display='block'; });
+$('#installbtn').addEventListener('click',async()=>{ if(deferredPrompt){ deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt=null; $('#installbtn').style.display='none'; } });
+(function iosHint(){ const isIOS=/iphone|ipad|ipod/i.test(navigator.userAgent);
+  const standalone=window.navigator.standalone||matchMedia('(display-mode: standalone)').matches;
+  if(isIOS&&!standalone){ $('#ios-note').textContent='iPhone: tap the Share button, then “Add to Home Screen” for a true full-screen clock.'; }
+})();
+
+/* =========================================================
+   BOOT
+   ========================================================= */
+async function startExperience(){
+  $('#intro').classList.add('gone');
+  document.body.classList.add('chrome-hidden');
+  try{ await AudioEngine.useAmbient(); AudioEngine.ambient.pause(); AudioEngine.stop(); }catch(e){} // warm up audio ctx within gesture
+  if(S.mic){ try{ await AudioEngine.useMic(); state.audio._mic=true; }catch(e){ S.mic=false; } }
+  else if(S.audio){ try{ await AudioEngine.useAmbient(); }catch(e){ S.audio=false; } }
+  if(S.wake) requestWake();
+  if(S.weather){ Weather.fetchNow(); setInterval(()=>S.weather&&Weather.fetchNow(), 15*60000); }
+  armChromeHide();
+}
+$('#startbtn').addEventListener('click',startExperience);
+
+function init(){
+  resize(); buildWordGrid(); updateSky();
+  document.body.classList.toggle('secs',S.secs);
+  applyBg(); applyFont();
+  setTheme(S.theme,false);
+  refreshUI();
+  Weather.renderChip();
+  if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
+  requestAnimationFrame(loop);
+  // if launched already-installed, skip intro
+  if(window.navigator.standalone||matchMedia('(display-mode: standalone)').matches){ /* still show intro for gesture-gated APIs */ }
+}
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,44 @@
+/* Lumina Clock service worker — offline app shell */
+const CACHE = 'lumina-v3';
+const ASSETS = [
+  './',
+  './index.html',
+  './manifest.webmanifest',
+  './icons/icon-192.png',
+  './icons/icon-512.png'
+];
+
+self.addEventListener('install', (e) => {
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)));
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (e) => {
+  e.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
+    )
+  );
+  self.clients.claim();
+});
+
+self.addEventListener('fetch', (e) => {
+  const url = new URL(e.request.url);
+  // always hit network for live weather
+  if (url.hostname.includes('open-meteo.com')) return;
+  // cache-first for the app shell + fonts, network fallback (and opportunistically cache)
+  e.respondWith(
+    caches.match(e.request).then((cached) =>
+      cached ||
+      fetch(e.request)
+        .then((res) => {
+          if (e.request.method === 'GET' && res && res.status === 200) {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put(e.request, copy)).catch(() => {});
+          }
+          return res;
+        })
+        .catch(() => cached)
+    )
+  );
+});

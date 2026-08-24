@@ -1,0 +1,5 @@
+# local dev noise
+build.log
+.DS_Store
+*.log
+.vscode/
