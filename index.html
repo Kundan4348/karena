@@ -20,7 +20,7 @@
 <!-- Fonts (graceful fallback to system fonts offline) -->
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;500;700;900&family=Orbitron:wght@500;700;900&family=Monoton&family=Sora:wght@300;600;800&family=Space+Grotesk:wght@400;700&family=Share+Tech+Mono&family=Space+Mono:wght@700&family=Chakra+Petch:wght@600;700&family=Archivo:wght@700;900&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;500;700;900&family=Orbitron:wght@500;700;900&family=Monoton&family=Sora:wght@300;600;800&family=Space+Grotesk:wght@400;700&family=Share+Tech+Mono&family=Space+Mono:wght@700&family=Chakra+Petch:wght@600;700&family=Archivo:wght@700;900&family=Fredoka:wght@500;600;700&display=swap" rel="stylesheet" />
 <!-- DSEG 7-segment font (with fallback) -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dseg@0.46.0/css/dseg.css" />
 
@@ -60,6 +60,7 @@ body{ filter:brightness(var(--dim)); transition:filter .8s ease, background .8s 
 }
 #bgcanvas{ position:fixed; inset:0; width:100%; height:100%; display:block; z-index:0; }
 #weatherfx{ position:fixed; inset:0; width:100%; height:100%; display:block; z-index:1; pointer-events:none; }
+#viz{ position:fixed; inset:0; width:100%; height:100%; display:block; z-index:4; pointer-events:none; }
 .layer{ position:fixed; inset:0; display:none; z-index:2; align-items:center; justify-content:center; pointer-events:none; }
 .layer.active{ display:flex; }
 .hidden{ display:none !important; }
@@ -78,6 +79,30 @@ body{ filter:brightness(var(--dim)); transition:filter .8s ease, background .8s 
 #layer-aurora .sub{ font-weight:300; opacity:.85; font-size:min(5.5vw,4vh); letter-spacing:.28em; text-transform:uppercase; }
 @media (orientation:landscape){ #layer-aurora .time{ font-size:min(26vw,58vh); } }
 
+/* ================= BOLD (iOS StandBy chunky two-tone) ================= */
+#layer-bold .bold-wrap{ display:flex; align-items:center; justify-content:center; }
+#layer-bold .bd{ font-family:'Fredoka','Poppins',sans-serif; font-weight:700; line-height:.78;
+  font-size:min(34vw,44vh); transition:transform .12s ease; }
+@media (orientation:landscape){ #layer-bold .bd{ font-size:min(25vw,62vh);} }
+#layer-bold .d{ letter-spacing:-0.03em; position:relative; }
+#layer-bold [data-bd="0"]{ color:var(--accent);  margin-right:-0.15em; z-index:2; }
+#layer-bold [data-bd="1"]{ color:var(--accent2); z-index:1; }
+#layer-bold [data-bd="2"]{ color:var(--accent2); margin-right:-0.15em; z-index:2; }
+#layer-bold [data-bd="3"]{ color:var(--accent);  z-index:1; }
+#layer-bold .colon{ display:flex; flex-direction:column; justify-content:center; gap:min(3.4vw,4vh);
+  margin:0 min(1.4vw,1.4vh); z-index:5; }
+#layer-bold .colon i{ width:min(6.4vw,8.4vh); height:min(6.4vw,8.4vh); border-radius:50%; background:#eaf0ff;
+  box-shadow:0 0 min(4vw,4vh) rgba(255,255,255,.45); }
+#layer-bold [data-bd="4"]{ color:var(--accent2); margin-right:-0.15em; z-index:2; }
+#layer-bold [data-bd="5"]{ color:var(--accent);  z-index:1; }
+/* seconds hidden unless the global Seconds toggle is on */
+#layer-bold .secs-only{ display:none; }
+body.secs #layer-bold .colon.secs-only{ display:flex; }
+body.secs #layer-bold .d.secs-only{ display:inline-block; }
+/* shrink so HH:MM:SS fits */
+body.secs #layer-bold .bd{ font-size:min(22vw,30vh); }
+@media (orientation:landscape){ body.secs #layer-bold .bd{ font-size:min(15vw,42vh);} }
+
 /* ================= NEON (multi-layer glow + flicker + reflection) ================= */
 #layer-neon{ background:transparent; }
 #layer-neon .neon-wrap{ position:relative; display:flex; flex-direction:column; align-items:center; }
@@ -87,12 +112,9 @@ body{ filter:brightness(var(--dim)); transition:filter .8s ease, background .8s 
   color:#fdf3ff;                                  /* near-white core */
   text-shadow:
     0 0 2px #fff,
-    0 0 6px  var(--accent),
-    0 0 12px var(--accent),
-    0 0 calc(24px * var(--glow)) var(--accent),
-    0 0 calc(46px * var(--glow)) var(--accent2),
-    0 0 calc(82px * var(--glow)) var(--accent2);
-  filter:brightness(calc(.92 + var(--glow) * .18));
+    0 0 10px var(--accent),
+    0 0 calc(26px * var(--glow)) var(--accent),
+    0 0 calc(54px * var(--glow)) var(--accent2);
 }
 #layer-neon .time .fl{ animation:neonFlicker 5.2s infinite steps(1,end); }  /* one flickering glyph */
 @keyframes neonFlicker{
@@ -100,6 +122,7 @@ body{ filter:brightness(var(--dim)); transition:filter .8s ease, background .8s 
   19%,23%,57%{ opacity:.35; text-shadow:none; }
 }
 #layer-neon .reflect{
+  text-shadow:none;   /* reflection is blurred+faint already — no need to re-render the heavy glow */
   margin-top:-.1em; transform:scaleY(-1); opacity:.22; filter:blur(3px);
   -webkit-mask-image:linear-gradient(transparent 42%,#000 96%); mask-image:linear-gradient(transparent 42%,#000 96%);
   pointer-events:none;
@@ -181,7 +204,7 @@ body.light #layer-flip .flip3d .fc.bottom,body.light #layer-flip .flip3d .fc.fli
   font-size:min(6.5vw,6vh); letter-spacing:.12em;
 }
 #layer-word .cell{ color:rgba(255,255,255,.10); transition:color .5s, text-shadow .5s; }
-#layer-word .cell.on{ color:#fff; text-shadow:0 0 18px var(--accent); }
+#layer-word .cell.on{ color:#fff; text-shadow:0 0 var(--wglow,18px) var(--accent); }
 @media (orientation:landscape){ #layer-word .grid{ font-size:min(4vw,7vh);} }
 
 /* ================= CANVAS-ONLY THEMES ================= */
@@ -253,6 +276,16 @@ body.light #layer-flip .flip3d .fc.bottom,body.light #layer-flip .flip3d .fc.fli
 .pill{ pointer-events:auto; display:inline-block; margin:4px 6px 0 0; padding:7px 13px; border-radius:99px;
   border:1px solid rgba(255,255,255,.16); background:rgba(255,255,255,.05); color:#fff; font-size:13px; cursor:pointer;}
 .pill.sel{ border-color:var(--accent); background:rgba(106,213,255,.12); }
+/* clean option grids for background + font pickers */
+.optgrid{ display:grid; grid-template-columns:repeat(2,1fr); gap:8px; margin-top:2px; }
+.optbtn{ pointer-events:auto; display:flex; align-items:center; gap:10px; border:1px solid rgba(255,255,255,.12);
+  background:rgba(255,255,255,.05); color:var(--fg); border-radius:12px; padding:9px 11px; cursor:pointer;
+  font-size:13px; text-align:left; transition:.15s; overflow:hidden; }
+.optbtn:active{ transform:scale(.97); }
+.optbtn.sel{ border-color:var(--accent); box-shadow:0 0 0 1px var(--accent), 0 0 18px rgba(106,213,255,.2); background:rgba(106,213,255,.08); }
+.optbtn .chip{ width:22px; height:22px; border-radius:6px; flex:none; box-shadow:inset 0 0 0 1px rgba(255,255,255,.2); }
+.optbtn .lab{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.audio-status{ font-size:12.5px; opacity:.75; margin:4px 0 0; min-height:1.1em; line-height:1.5; }
 .note{ font-size:11.5px; opacity:.45; margin-top:8px; line-height:1.5;}
 #installbtn{ display:none; margin-top:14px; width:100%; padding:13px; border-radius:12px; border:0;
   background:var(--accent); color:#001; font-weight:700; font-size:15px; cursor:pointer; pointer-events:auto;}
@@ -341,11 +374,21 @@ body.secs #layer-seg .seg{ font-size:min(17vw,26vh); }
 
   <canvas id="bgcanvas"></canvas>
   <canvas id="weatherfx"></canvas>
+  <canvas id="viz"></canvas>
 
   <div id="stage">
     <!-- Aurora (StandBy) -->
     <div class="layer" id="layer-aurora"><div class="stack">
       <div class="time" data-time>00:00</div><div class="sub" data-day>MONDAY</div>
+    </div></div>
+
+    <!-- Bold (iOS StandBy chunky two-tone) -->
+    <div class="layer" id="layer-bold"><div class="bold-wrap">
+      <span class="bd d" data-bd="0">0</span><span class="bd d" data-bd="1">0</span>
+      <span class="bd colon"><i></i><i></i></span>
+      <span class="bd d" data-bd="2">0</span><span class="bd d" data-bd="3">0</span>
+      <span class="bd colon secs-only"><i></i><i></i></span>
+      <span class="bd d secs-only" data-bd="4">0</span><span class="bd d secs-only" data-bd="5">0</span>
     </div></div>
 
     <!-- Neon -->
@@ -421,7 +464,7 @@ body.secs #layer-seg .seg{ font-size:min(17vw,26vh); }
       <div class="sect">Music Reactivity</div>
       <div class="row"><div class="lbl">Microphone (react to room music)<small>Best cross-platform option on phones</small></div><div class="tg" id="tg-mic"></div></div>
       <div class="row"><div class="lbl">Play built-in ambient audio<small>Publishes to lock-screen media controls</small></div><div class="tg" id="tg-audio"></div></div>
-      <div class="note" id="audio-note"></div>
+      <div class="audio-status" id="audio-note">Turn on Microphone or Ambient — each clock face reacts in its own style (glow, rings, sparks, radial spectrum…).</div>
 
       <div class="sect">Weather</div>
       <div class="row"><div class="lbl">Live weather + sky palette<small>Free Open-Meteo · uses your location</small></div><div class="tg" id="tg-weather"></div></div>
@@ -469,11 +512,13 @@ const DEFAULTS={
   theme:'aurora', fmt:'24', secs:false, unit:'c',
   mic:false, audio:false, weather:false, wfx:true,
   wake:true, night:true, drift:true,
-  accent:'#6ad5ff', accent2:'#b892ff',
-  bg:'sky', font:'Poppins', numColor:'default'
+  accent:'#6ad5ff', accent2:'#b892ff', accentAuto:true,
+  bg:'auto', font:'Poppins', numColor:'default'
 };
 let S=Object.assign({},DEFAULTS);
-try{ Object.assign(S, JSON.parse(localStorage.getItem('lumina')||'{}')); }catch(e){}
+try{ const saved=JSON.parse(localStorage.getItem('lumina')||'{}'); Object.assign(S,saved);
+  if(!('accentAuto' in saved)){ S.bg='auto'; S.accentAuto=true; }   // migrate old settings to theme-based default
+}catch(e){}
 const save=()=>{ try{ localStorage.setItem('lumina',JSON.stringify(S)); }catch(e){} };
 
 /* ---------- shared runtime state ---------- */
@@ -495,33 +540,57 @@ function applyAccent(a,b){
 }
 applyAccent(S.accent,S.accent2);
 
+let activeTheme=null;   // declared early: facePal()/applyBg() run at load and read this (TDZ-safe)
+
 /* ---------- backgrounds ---------- */
 const BG={
+  auto:    {label:'Match clock face ✨', type:'auto'},
   sky:     {label:'Sky (time of day)', type:'sky',  base:'#0b1020'},
   amoled:  {label:'AMOLED black',      type:'solid',c:'#000000'},
-  charcoal:{label:'Charcoal',          type:'solid',c:'#0b0b0e'},
-  graphite:{label:'Graphite',          type:'grad', a:'#26262b', b:'#050506'},
-  light:   {label:'Light',             type:'solid',c:'#f4f5f7', light:true},
-  paper:   {label:'Paper',             type:'grad', a:'#f3efe6', b:'#e2ddce', light:true},
-  teal:    {label:'Deep teal',         type:'grad', a:'#0F2027', b:'#2C5364'},
-  sunset:  {label:'Sunset',            type:'grad', a:'#FF512F', b:'#DD2476'},
-  violet:  {label:'Violet',            type:'grad', a:'#8E2DE2', b:'#4A00E0'},
-  ocean:   {label:'Ocean',             type:'grad', a:'#43CEA2', b:'#185A9D'},
-  midnight:{label:'Midnight blue',     type:'grad', a:'#0F2027', b:'#000000'}
+  charcoal:{label:'Charcoal',          type:'grad', a:'#16161c', b:'#050507'},
+  midnight:{label:'Midnight',          type:'grad', a:'#0b1533', b:'#02030a'},
+  teal:    {label:'Deep teal',         type:'grad', a:'#0F2027', b:'#203A43'},
+  ember:   {label:'Ember',             type:'grad', a:'#2b1005', b:'#0a0402'},
+  royal:   {label:'Royal',             type:'grad', a:'#3a1c71', b:'#0d0620'},
+  ocean:   {label:'Ocean',             type:'grad', a:'#1a2980', b:'#050a1f'},
+  light:   {label:'Light',             type:'grad', a:'#fdfdff', b:'#e9ecf3', light:true},
+  paper:   {label:'Warm paper',        type:'grad', a:'#f4efe4', b:'#e5ddcb', light:true}
 };
-const bgDef=()=>BG[S.bg]||BG.sky;
-const isLight=()=>!!bgDef().light;
-function paintBase(ctx){
-  const d=bgDef(), w=state.w, h=state.h;
-  if(d.type==='sky'){ const g=ctx.createLinearGradient(0,0,0,h); g.addColorStop(0,state.sky.a); g.addColorStop(1,state.sky.b); ctx.fillStyle=g; }
-  else if(d.type==='grad'){ const g=ctx.createLinearGradient(0,0,w,h); g.addColorStop(0,d.a); g.addColorStop(1,d.b); ctx.fillStyle=g; }
-  else ctx.fillStyle=d.c;
+/* per-face curated palettes used when background = "Match clock face" */
+const PALETTES={
+  aurora:{bg:{type:'grad',a:'#0F2027',b:'#2C5364'},accent:'#6ad5ff',accent2:'#b892ff'},
+  bold:{bg:{type:'solid',c:'#000000'},accent:'#2f6fe0',accent2:'#6db3ff'},
+  neon:{bg:{type:'solid',c:'#07070d'},accent:'#ff2e97',accent2:'#12fff7'},
+  flip:{bg:{type:'grad',a:'#17171c',b:'#050506'},accent:'#7fd0ff',accent2:'#b892ff'},
+  seg:{bg:{type:'solid',c:'#060404'},accent:'#ff4b3c',accent2:'#ffb000'},
+  word:{bg:{type:'solid',c:'#0b0b0d'},accent:'#ffd166',accent2:'#a8e6cf'},
+  glass:{bg:{type:'grad',a:'#8E2DE2',b:'#341873'},accent:'#29e7ff',accent2:'#ff2fd0'},
+  analog:{bg:{type:'grad',a:'#10131c',b:'#04060a'},accent:'#ff4d4d',accent2:'#ffb000'},
+  hud:{bg:{type:'grad',a:'#04060f',b:'#000000'},accent:'#29e7ff',accent2:'#7a5cff'},
+  synth:{bg:{type:'grad',a:'#1a0b2e',b:'#0d0618'},accent:'#ff2fd0',accent2:'#29e7ff'},
+  pulse:{bg:{type:'grad',a:'#0a0f1f',b:'#05060f'},accent:'#00e5ff',accent2:'#ff10f0'},
+  constellation:{bg:{type:'grad',a:'#0a1030',b:'#03040c'},accent:'#7c4dff',accent2:'#64ffda'},
+  rain:{bg:{type:'solid',c:'#03040a'},accent:'#39ff14',accent2:'#00e5a8'},
+  solaris:{bg:{type:'solid',c:'#03030a'},accent:'#ffb84d',accent2:'#ff7a18'},
+  ember:{bg:{type:'grad',a:'#160a06',b:'#05030a'},accent:'#ff7a18',accent2:'#ffd15c'}
+};
+const bgDef=()=>BG[S.bg]||BG.auto;
+const facePal=()=>(activeTheme&&PALETTES[activeTheme.id])||PALETTES.aurora;
+const isLight=()=>{ const d=bgDef(); return d.type==='auto'?false:!!d.light; };
+function paintSpec(ctx,spec){
+  const w=state.w,h=state.h;
+  if(!spec||spec.type==='sky'){ const g=ctx.createLinearGradient(0,0,0,h); g.addColorStop(0,state.sky.a); g.addColorStop(1,state.sky.b); ctx.fillStyle=g; }
+  else if(spec.type==='grad'){ const g=ctx.createLinearGradient(0,0,w,h); g.addColorStop(0,spec.a); g.addColorStop(1,spec.b); ctx.fillStyle=g; }
+  else ctx.fillStyle=spec.c;
   ctx.fillRect(0,0,w,h);
 }
+function paintBase(ctx){ const d=bgDef(); paintSpec(ctx, d.type==='auto'?facePal().bg:d); }
 function applyBg(){
-  const d=bgDef();
-  document.documentElement.style.setProperty('--bg', d.type==='solid'?d.c:(d.a||d.base||'#000'));
-  document.body.classList.toggle('light', !!d.light);
+  const d=bgDef(); let bgc, light;
+  if(d.type==='auto'){ const s=facePal().bg; bgc=s.type==='solid'?s.c:(s.a||'#000'); light=false; }
+  else { bgc=d.type==='solid'?d.c:(d.a||d.base||'#000'); light=!!d.light; }
+  document.documentElement.style.setProperty('--bg', bgc);
+  document.body.classList.toggle('light', light);
   applyNum();
 }
 /* ---------- numeral color + font ---------- */
@@ -538,42 +607,62 @@ document.documentElement.style.setProperty('--clockfont', `'${S.font}'`);
    ========================================================= */
 const AudioEngine=(()=>{
   let ctx=null, analyser=null, freq=null, time=null, micStream=null, srcNode=null, mode=null;
+  let elemSrc=null, mute=null, padNodes=null;   // padNodes = synthesized ambient oscillators
   let energyAvg=0, beatCooldown=0;
   const ambient=$('#ambient');
 
   async function ensureCtx(){
     if(!ctx){ ctx=new (window.AudioContext||window.webkitAudioContext)(); }
-    if(ctx.state==='suspended') await ctx.resume();
+    if(ctx.state==='suspended'){ try{ await ctx.resume(); }catch(e){} }
     if(!analyser){
       analyser=ctx.createAnalyser();
       analyser.fftSize=1024; analyser.smoothingTimeConstant=0.8;
       freq=new Uint8Array(analyser.frequencyBinCount);
-      time=new Uint8Array(analyser.frequencyBinCount);
+      time=new Uint8Array(analyser.fftSize);
     }
+    if(!mute){ mute=ctx.createGain(); mute.gain.value=0; mute.connect(ctx.destination); } // pulls analyser silently for mic
   }
-  function disconnect(){
-    try{ srcNode&&srcNode.disconnect(); }catch(e){}
-    if(micStream){ micStream.getTracks().forEach(t=>t.stop()); micStream=null; }
-    srcNode=null;
+  function stopMic(){ if(micStream){ micStream.getTracks().forEach(t=>t.stop()); micStream=null; } }
+  function detach(){ try{ srcNode&&srcNode.disconnect(); }catch(e){} try{ analyser&&analyser.disconnect(); }catch(e){} srcNode=null; }
+
+  // just open + resume the AudioContext inside a user gesture (no source created)
+  async function warmup(){ try{ await ensureCtx(); }catch(e){} }
+
+  // built-in ambient: synthesized pad (oscillators) — reliable & always audible
+  function startPad(){
+    stopPad();
+    const master=ctx.createGain(); master.gain.value=0.0001;
+    master.connect(analyser); analyser.connect(ctx.destination);
+    const t0=ctx.currentTime; master.gain.exponentialRampToValueAtTime(0.5, t0+1.2);
+    const chord=[130.81,164.81,196.0,246.94,392.0]; const nodes=[master];
+    chord.forEach((f,i)=>{
+      const o=ctx.createOscillator(); o.type=(i%2)?'triangle':'sine'; o.frequency.value=f;
+      const g=ctx.createGain(); g.gain.value=(i===0?0.5:0.16);
+      o.connect(g); g.connect(master); o.start(); nodes.push(o);
+      const d=ctx.createOscillator(); d.frequency.value=0.06+0.02*i; const dg=ctx.createGain(); dg.gain.value=4;
+      d.connect(dg); dg.connect(o.detune); d.start(); nodes.push(d);
+    });
+    // slow swell so the whole spectrum breathes (gives the beat detector peaks to catch)
+    const swell=ctx.createOscillator(); swell.frequency.value=0.85; const sg=ctx.createGain(); sg.gain.value=0.3;
+    swell.connect(sg); sg.connect(master.gain); swell.start(); nodes.push(swell);
+    padNodes=nodes;
   }
+  function stopPad(){ if(!padNodes) return; padNodes.forEach(n=>{ try{ n.stop&&n.stop(); }catch(e){} try{ n.disconnect(); }catch(e){} }); padNodes=null; }
+
   async function useMic(){
-    await ensureCtx(); disconnect();
+    await ensureCtx(); stopPad(); detach();
     micStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
     srcNode=ctx.createMediaStreamSource(micStream);
-    srcNode.connect(analyser);   // do NOT connect to destination (feedback)
+    srcNode.connect(analyser); analyser.connect(mute);   // muted sink: silent, graph still pulled
     mode='mic'; state.audio.active=true;
   }
   async function useAmbient(){
-    await ensureCtx(); disconnect();
-    if(!ambient.src) ambient.src=makeAmbientTrack();
-    srcNode=ctx.createMediaElementSource(ambient);
-    srcNode.connect(analyser); analyser.connect(ctx.destination);  // audible
-    await ambient.play().catch(()=>{});
+    await ensureCtx(); stopMic(); detach(); startPad();
     mode='audio'; state.audio.active=true;
-    setMediaSession();
   }
-  function stop(){ disconnect(); state.audio.active=false; mode=null;
-    try{ambient.pause();}catch(e){} }
+  function stop(){ stopPad(); stopMic(); detach(); state.audio.active=false; mode=null; }
+  function isActive(){ return state.audio.active; }
+  function currentMode(){ return mode; }
 
   // procedurally-generated calm ambient loop as a data-URI WAV (no external asset)
   let cachedTrack=null;
@@ -630,15 +719,20 @@ const AudioEngine=(()=>{
     const mid =band(Math.floor(bins*0.08),Math.floor(bins*0.35));
     const treble=band(Math.floor(bins*0.35),bins);
     const level=(bass*1.3+mid+treble*0.7)/3;
-    a.bass=lerp(a.bass,bass,0.5); a.mid=lerp(a.mid,mid,0.4);
-    a.treble=lerp(a.treble,treble,0.4); a.level=lerp(a.level,level,0.4);
+    const AMP=1.7;   // punchier so reactivity is clearly visible
+    a.bass  =lerp(a.bass,  clamp(bass*AMP,0,1),   0.55);
+    a.mid   =lerp(a.mid,   clamp(mid*AMP,0,1),    0.45);
+    a.treble=lerp(a.treble,clamp(treble*AMP,0,1), 0.45);
+    a.level =lerp(a.level, clamp(level*AMP,0,1),  0.45);
     // beat detection on bass energy
     energyAvg=lerp(energyAvg,bass,0.08);
     if(beatCooldown>0)beatCooldown--;
-    if(bass>energyAvg*1.35 && bass>0.25 && beatCooldown===0){ a.beat=1; beatCooldown=10; }
+    if(bass>energyAvg*1.25 && bass>0.16 && beatCooldown===0){ a.beat=1; beatCooldown=8; }
     else a.beat*=0.85;
   }
-  return {useMic,useAmbient,stop,sample,ambient};
+  function freqData(){ return state.audio.active?freq:null; }
+  function timeData(){ if(!analyser||!state.audio.active) return null; analyser.getByteTimeDomainData(time); return time; }
+  return {useMic,useAmbient,stop,sample,warmup,isActive,currentMode,freqData,timeData,ambient};
 })();
 
 /* =========================================================
@@ -770,12 +864,14 @@ async function toggleFullscreen(){
    ========================================================= */
 const bg=$('#bgcanvas'), bgx=bg.getContext('2d');
 const wfx=$('#weatherfx'), wfxx=wfx.getContext('2d');
+const viz=$('#viz'), vizx=viz.getContext('2d');
 function resize(){
   state.w=innerWidth; state.h=innerHeight; state.portrait=innerHeight>=innerWidth;
   state.dpr=Math.min(devicePixelRatio||1,2);
-  for(const cv of [bg,wfx]){ cv.width=state.w*state.dpr; cv.height=state.h*state.dpr; }
+  for(const cv of [bg,wfx,viz]){ cv.width=state.w*state.dpr; cv.height=state.h*state.dpr; }
   bgx.setTransform(state.dpr,0,0,state.dpr,0,0);
   wfxx.setTransform(state.dpr,0,0,state.dpr,0,0);
+  vizx.setTransform(state.dpr,0,0,state.dpr,0,0);
   if(activeTheme&&activeTheme.layout) activeTheme.layout();
   buildWordGrid();
 }
@@ -817,7 +913,7 @@ function glyphToScreen(p,targetH){
    Each theme: {name,desc,kind,init?,draw?(dt),layout?,destroy?}
    ========================================================= */
 const THEMES={}; const THEME_ORDER=[];
-let activeTheme=null;
+/* activeTheme is declared earlier (near the top) so facePal()/applyBg() are TDZ-safe at load */
 function registerTheme(id,def){ def.id=id; THEMES[id]=def; THEME_ORDER.push(id); }
 
 function setTheme(id,flash){
@@ -827,6 +923,9 @@ function setTheme(id,flash){
   bgx.clearRect(0,0,state.w,state.h);
   $$('.layer').forEach(l=>l.classList.remove('active'));
   activeTheme=THEMES[id]; S.theme=id; save();
+  // theme-based look: when background = auto, adopt this face's curated palette
+  if(S.bg==='auto' && S.accentAuto){ const p=PALETTES[id]; if(p) applyAccent(p.accent,p.accent2); }
+  if(S.bg==='auto') applyBg();
   const domLayer=$('#layer-'+id);
   if(domLayer) domLayer.classList.add('active');
   if(activeTheme.init) activeTheme.init();
@@ -858,6 +957,7 @@ function loop(t){
     else { bgx.clearRect(0,0,state.w,state.h); drawSkyBackdrop(); if(activeTheme.draw) activeTheme.draw(dt); }
   }
   drawWeatherFX(dt);
+  drawViz();
   updateChrome();
   requestAnimationFrame(loop);
 }
@@ -866,6 +966,107 @@ function loop(t){
 function drawSkyBackdrop(){
   if(activeTheme&&activeTheme.noBackdrop) return;
   paintBase(bgx);
+}
+/* =========================================================
+   MUSIC VISUALS — a shared toolkit; each face gets a NATIVE treatment
+   (continuous faces → bloom/blob/hue · geometric faces → rings/bursts)
+   ========================================================= */
+let beatRings=[], vizP=[];
+function vzBreathe(){                       // universal soft bass bloom
+  const a=state.audio; if(a.level<=0.015) return;
+  const {w,h}=state, cx=w/2, cy=h/2, rad=Math.max(w,h)*(0.30+a.bass*0.42), al=0.05+a.bass*0.26;
+  const g=vizx.createRadialGradient(cx,cy,0,cx,cy,rad);
+  g.addColorStop(0,hexA(S.accent,al)); g.addColorStop(1,hexA(S.accent,0));
+  vizx.save(); vizx.globalCompositeOperation='lighter'; vizx.fillStyle=g; vizx.fillRect(0,0,w,h); vizx.restore();
+}
+function vzRadialBars(R){                    // spectrum arranged around a circle (mirrored) — no shadowBlur (perf)
+  const f=AudioEngine.freqData(); if(!f) return;
+  const {w,h}=state, cx=w/2, cy=h/2, N=72, step=Math.max(1,Math.floor(f.length*0.55/(N/2)));
+  const maxLen=Math.min(w,h)*0.16, lw=Math.max(2,Math.min(w,h)*0.006);
+  vizx.save(); vizx.translate(cx,cy); vizx.globalCompositeOperation='lighter';
+  for(let i=0;i<N;i++){ const mir=i<N/2?i:N-1-i; const v=(f[mir*step]||0)/255, len=6+v*v*maxLen;
+    const ang=(i/N)*TAU, c=Math.cos(ang), s=Math.sin(ang), col=mixHex(S.accent,S.accent2,v);
+    const x0=c*R,y0=s*R,x1=c*(R+len),y1=s*(R+len);
+    vizx.strokeStyle=hexA(col,0.2);  vizx.lineWidth=lw*3; vizx.beginPath(); vizx.moveTo(x0,y0); vizx.lineTo(x1,y1); vizx.stroke(); // wide faint glow
+    vizx.strokeStyle=hexA(col,0.95); vizx.lineWidth=lw;   vizx.beginPath(); vizx.moveTo(x0,y0); vizx.lineTo(x1,y1); vizx.stroke(); // bright core
+  }
+  vizx.restore();
+}
+function vzRadialBlob(R){                     // liquid morphing outline (holographic)
+  const f=AudioEngine.freqData(); if(!f) return;
+  const {w,h}=state, cx=w/2, cy=h/2, N=120, pts=[], amp=Math.min(w,h)*0.14;
+  for(let i=0;i<N;i++){ const a=(i/N)*TAU, band=(f[(i*3)%f.length]||0)/255;
+    const wob=Math.sin(a*5+state.t*0.6)*0.06+Math.sin(a*3-state.t*0.4)*0.04;
+    const r=R*(1+wob)+band*amp; pts.push([cx+Math.cos(a)*r, cy+Math.sin(a)*r]); }
+  vizx.save(); vizx.globalCompositeOperation='lighter';
+  vizx.beginPath(); vizx.moveTo((pts[0][0]+pts[N-1][0])/2,(pts[0][1]+pts[N-1][1])/2);
+  for(let i=0;i<N;i++){ const p=pts[i],q=pts[(i+1)%N]; vizx.quadraticCurveTo(p[0],p[1],(p[0]+q[0])/2,(p[1]+q[1])/2); }
+  vizx.closePath();
+  const g=vizx.createRadialGradient(cx,cy,R*0.3,cx,cy,R*1.7);
+  g.addColorStop(0,hexA(S.accent,0.30)); g.addColorStop(1,hexA(S.accent2,0));
+  vizx.fillStyle=g; vizx.shadowBlur=28; vizx.shadowColor=S.accent; vizx.fill(); vizx.restore();
+}
+function vzRings(){                            // shockwaves emitted on beat
+  const {w,h}=state, cx=w/2, cy=h/2, MAX=Math.min(w,h)*0.6;
+  if(state.audio.beat>0.6) beatRings.push({r:Math.min(w,h)*0.05, life:1});
+  vizx.save(); vizx.globalCompositeOperation='lighter';
+  for(let i=beatRings.length-1;i>=0;i--){ const b=beatRings[i]; b.life-=0.02; b.r=lerp(b.r,MAX,0.06);
+    if(b.life<=0){ beatRings.splice(i,1); continue; }
+    vizx.beginPath(); vizx.arc(cx,cy,b.r,0,TAU); vizx.lineWidth=Math.max(2,h*0.008*b.life);
+    vizx.strokeStyle=hexA(S.accent2,b.life*0.6); vizx.shadowBlur=20; vizx.shadowColor=S.accent2; vizx.stroke(); }
+  vizx.restore();
+}
+function vzScope(y){                            // linear oscilloscope (glow, 2-pass)
+  const t=AudioEngine.timeData(); if(!t) return;
+  const {w,h}=state, N=t.length;
+  vizx.save(); vizx.globalCompositeOperation='lighter';
+  for(let pass=0;pass<2;pass++){ vizx.beginPath();
+    for(let i=0;i<N;i++){ const v=(t[i]-128)/128, x=i/(N-1)*w, yy=y+v*h*0.13; i?vizx.lineTo(x,yy):vizx.moveTo(x,yy); }
+    vizx.lineWidth=pass?2:8; vizx.strokeStyle=hexA(S.accent,pass?0.95:0.2); vizx.shadowBlur=pass?12:0; vizx.shadowColor=S.accent; vizx.stroke(); }
+  vizx.restore();
+}
+function vzScopeCircular(R){                     // elegant oscilloscope halo (suits glass)
+  const t=AudioEngine.timeData(); if(!t) return;
+  const {w,h}=state, cx=w/2, cy=h/2, N=t.length, amp=Math.min(w,h)*0.06;
+  vizx.save(); vizx.translate(cx,cy); vizx.globalCompositeOperation='lighter';
+  for(let pass=0;pass<2;pass++){ vizx.beginPath();
+    for(let i=0;i<=N;i++){ const v=(t[i%N]-128)/128, a=(i/N)*TAU, r=R+v*amp; i?vizx.lineTo(Math.cos(a)*r,Math.sin(a)*r):vizx.moveTo(Math.cos(a)*r,Math.sin(a)*r); }
+    vizx.closePath(); vizx.lineWidth=pass?2.5:8; vizx.strokeStyle=hexA(pass?S.accent:S.accent2, pass?0.95:0.14); vizx.stroke(); }
+  vizx.restore();
+}
+function vzParticles(fromEdge){                 // beat bursts + level-driven drift
+  const {w,h}=state, cx=w/2, cy=h/2, a=state.audio;
+  if(a.beat>0.6){ for(let i=0;i<28;i++){ const ang=Math.random()*TAU, sp=(1+Math.random()*3)*(0.6+a.beat)*3.2;
+    const x=fromEdge?Math.random()*w:cx, y=fromEdge?Math.random()*h:cy;
+    vizP.push({x,y,vx:Math.cos(ang)*sp,vy:Math.sin(ang)*sp,life:1,r:1+Math.random()*2.2}); } }
+  const gain=0.4+a.level*1.8;
+  vizx.save(); vizx.globalCompositeOperation='lighter';
+  for(let i=vizP.length-1;i>=0;i--){ const p=vizP[i]; p.x+=p.vx*gain; p.y+=p.vy*gain; p.vx*=0.97; p.vy*=0.97; p.life-=0.014;
+    if(p.life<=0){ vizP.splice(i,1); continue; }
+    const col=mixHex(S.accent,S.accent2,1-p.life);
+    vizx.fillStyle=hexA(col,p.life); vizx.shadowBlur=8; vizx.shadowColor=col;
+    vizx.beginPath(); vizx.arc(p.x,p.y,p.r*p.life,0,TAU); vizx.fill(); }
+  vizx.restore();
+}
+function drawViz(){
+  vizx.clearRect(0,0,state.w,state.h);
+  if(!AudioEngine.isActive()){ beatRings.length=0; vizP.length=0; return; }
+  const R=Math.min(state.w,state.h);
+  vzBreathe();                                  // universal base
+  switch(activeTheme?activeTheme.id:''){
+    case 'neon':          vzRadialBars(R*0.40); break;      // glowing ring framing the tubes
+    case 'glass':         vzScopeCircular(R*0.34); break;   // clean oscilloscope halo around the card
+    case 'analog':        vzRadialBars(R*0.46); break;      // reactive bezel orbiting the dial
+    case 'hud':
+    case 'flip':
+    case 'solaris':       vzRings(); break;                 // crisp shockwaves on beat
+    case 'seg':           vzScope(state.h*0.74); break;     // lab oscilloscope below the LEDs
+    case 'constellation':
+    case 'ember':         vzParticles(false); break;        // sparks burst from center + drift
+    case 'synth':         vzRings(); vzParticles(true); break;
+    case 'pulse':         break;                            // the face IS the equalizer
+    default:              break;                            // aurora / word / rain: breathe only (they react in-face)
+  }
 }
 /* =========================================================
    DOM FACE UPDATES (aurora / neon / flip / seg / word)
@@ -878,7 +1079,13 @@ function updateDomFaces(){
   const ghost=$('#layer-seg .ghost'); if(ghost) ghost.textContent=S.secs?'88:88:88':'88:88';
   if(activeTheme){ if(activeTheme.id==='flip') updateFlip(T);
     else if(activeTheme.id==='word') updateWord();
-    else if(activeTheme.id==='neon') updateNeon(T); }
+    else if(activeTheme.id==='neon') updateNeon(T);
+    else if(activeTheme.id==='bold') updateBold(T); }
+}
+function updateBold(T){
+  let hh=T.h; if(S.fmt==='12') hh=hh%12||12;
+  const s=String(hh).padStart(2,'0')+String(T.m).padStart(2,'0')+String(T.s).padStart(2,'0');
+  $$('#layer-bold [data-bd]').forEach((el,i)=>{ if(el.textContent!==s[i]) el.textContent=s[i]; });
 }
 /* ---- Neon: wrap colon in a flickering span, drive --glow ---- */
 function updateNeon(T){
@@ -1042,12 +1249,15 @@ registerTheme('aurora',{ name:'Aurora', desc:'StandBy gradient mesh', kind:'dom'
 function hexA(hex,a){ const p=parseInt(hex.slice(1),16); return `rgba(${(p>>16)&255},${(p>>8)&255},${p&255},${clamp(a,0,1)})`; }
 
 /* FACE: NEON / FLIP / SEG / WORD are DOM-driven (canvas draws sky backdrop) */
+registerTheme('bold',{ name:'Bold', desc:'StandBy chunky two-tone', kind:'dom',
+  draw(){ const s=1+state.audio.beat*0.03; $$('#layer-bold .d').forEach(el=>el.style.transform=`scale(${s.toFixed(3)})`); } });
 registerTheme('neon',{ name:'Neon', desc:'Glowing tube numerals', kind:'dom',
-  draw(){ const glow=(0.6+state.audio.bass*1.8).toFixed(2); $$('#layer-neon .ntime').forEach(el=>el.style.setProperty('--glow',glow)); }
+  draw(){ const g=0.6+state.audio.bass*1.5; if(Math.abs(g-(this._g||0))>0.05){ this._g=g; $('#layer-neon').style.setProperty('--glow',g.toFixed(2)); } }
 });
 registerTheme('flip',{ name:'Flip', desc:'3D split-flap cards', kind:'dom', init(){ buildFlip(); } });
 registerTheme('seg',{ name:'Seven-Seg', desc:'Recessed LED panel', kind:'dom' });
-registerTheme('word',{ name:'Word', desc:'Time spelled in words', kind:'dom', init(){ buildWordGrid(); updateWord(); } });
+registerTheme('word',{ name:'Word', desc:'Time spelled in words', kind:'dom', init(){ buildWordGrid(); updateWord(); },
+  draw(){ const g=(14+state.audio.level*30+state.audio.beat*16).toFixed(1); document.documentElement.style.setProperty('--wglow',g+'px'); } });
 registerTheme('glass',{ name:'Glass', desc:'Holographic glass card', kind:'dom' });
 
 /* =========================================================
@@ -1299,21 +1509,20 @@ function buildSwatches(){
   ACCENTS.forEach(([a,b])=>{ const el=document.createElement('button'); el.className='pill'+(a===S.accent?' sel':'');
     el.style.cssText=`background:linear-gradient(120deg,${a},${b});color:#001;font-weight:700;border:none`;
     el.textContent=' '; el.style.width='40px';
-    el.onclick=()=>{ applyAccent(a,b); applyNum(); save(); buildSwatches(); $('#customcol').value=a; }; sw.appendChild(el); });
+    el.onclick=()=>{ S.accentAuto=false; applyAccent(a,b); applyNum(); save(); buildSwatches(); $('#customcol').value=a; }; sw.appendChild(el); });
 }
 function buildBgPills(){
-  const box=$('#bggrid'); box.innerHTML='';
+  const box=$('#bggrid'); box.className='optgrid'; box.innerHTML='';
   Object.keys(BG).forEach(id=>{ const d=BG[id];
-    const b=document.createElement('button'); b.className='pill'+(id===S.bg?' sel':''); b.dataset.bg=id; b.textContent=d.label;
-    // little preview swatch
-    const prev = d.type==='solid'?d.c : d.type==='grad'?`linear-gradient(120deg,${d.a},${d.b})`:'linear-gradient(120deg,#1a2140,#4facfe)';
-    b.style.borderLeft='10px solid transparent'; b.style.background=`linear-gradient(90deg, ${d.type==='solid'?d.c:(d.a||'#12203a')} 0 14px, rgba(255,255,255,.05) 14px)`;
-    b.onclick=()=>{ S.bg=id; applyBg(); save(); buildBgPills(); }; box.appendChild(b); });
+    const chip = d.type==='solid'?d.c : d.type==='grad'?`linear-gradient(135deg,${d.a},${d.b})` : 'linear-gradient(135deg,#f6a15b,#4facfe,#5f2c82)';
+    const b=document.createElement('button'); b.className='optbtn'+(id===S.bg?' sel':''); b.dataset.bg=id;
+    b.innerHTML=`<span class="chip" style="background:${chip}"></span><span class="lab">${d.label}</span>`;
+    b.onclick=()=>{ S.bg=id; if(id==='auto'&&S.accentAuto){const p=facePal(); applyAccent(p.accent,p.accent2);} applyBg(); save(); buildBgPills(); buildSwatches(); }; box.appendChild(b); });
 }
 function buildFontPills(){
-  const box=$('#fontgrid'); box.innerHTML='';
-  FONTS.forEach(f=>{ const b=document.createElement('button'); b.className='pill'+(f===S.font?' sel':''); b.dataset.font=f;
-    b.textContent=f; b.style.fontFamily=`'${f}',sans-serif`;
+  const box=$('#fontgrid'); box.className='optgrid'; box.innerHTML='';
+  FONTS.forEach(f=>{ const b=document.createElement('button'); b.className='optbtn'+(f===S.font?' sel':''); b.dataset.font=f;
+    b.innerHTML=`<span class="chip" style="display:grid;place-items:center;font-family:'${f}',sans-serif;font-weight:700;font-size:13px;background:rgba(255,255,255,.08)">A</span><span class="lab" style="font-family:'${f}',sans-serif">${f}</span>`;
     b.onclick=()=>{ S.font=f; applyFont(); save(); buildFontPills(); }; box.appendChild(b); });
 }
 function buildDots(){ const d=$('#dots'); d.innerHTML=''; THEME_ORDER.forEach(id=>{ const s=document.createElement('span'); s.className='dot'+(id===S.theme?' on':''); d.appendChild(s); }); }
@@ -1337,16 +1546,20 @@ onTg('#tg-night','night'); onTg('#tg-wake','wake',(v)=>{ if(v)requestWake(); els
 
 $('#tg-mic').addEventListener('click',async()=>{
   const want=!S.mic;
-  if(want){ try{ await AudioEngine.useMic(); state.audio._mic=true; S.mic=true; S.audio=false; setTg('#tg-audio',false);
-      AudioEngine.ambient.pause(); } catch(e){ S.mic=false; noteAudio('Microphone permission was blocked. Enable it in browser settings.'); } }
-  else { AudioEngine.stop(); S.mic=false; state.audio._mic=false; }
+  if(want){ noteAudio('Requesting microphone…');
+    try{ await AudioEngine.useMic(); state.audio._mic=true; S.mic=true; S.audio=false; setTg('#tg-audio',false);
+      noteAudio('🎤 Listening — try playing music near your device.'); }
+    catch(e){ S.mic=false; noteAudio('⚠️ Microphone blocked. Allow mic access in the browser, then retry.'); } }
+  else { AudioEngine.stop(); S.mic=false; state.audio._mic=false; noteAudio(''); }
   setTg('#tg-mic',S.mic); save();
 });
 $('#tg-audio').addEventListener('click',async()=>{
   const want=!S.audio;
-  if(want){ try{ await AudioEngine.useAmbient(); state.audio._mic=false; S.audio=true; S.mic=false; setTg('#tg-mic',false); }
-    catch(e){ S.audio=false; } }
-  else { AudioEngine.stop(); S.audio=false; }
+  if(want){ noteAudio('Starting ambient…');
+    try{ await AudioEngine.useAmbient(); state.audio._mic=false; S.audio=true; S.mic=false; setTg('#tg-mic',false);
+      noteAudio('🎵 Ambient pad playing — the clock now pulses to it.'); }
+    catch(e){ S.audio=false; noteAudio('⚠️ Tap again to allow audio playback.'); } }
+  else { AudioEngine.stop(); S.audio=false; noteAudio(''); }
   setTg('#tg-audio',S.audio); save();
 });
 $('#tg-weather').addEventListener('click',async()=>{
@@ -1360,7 +1573,7 @@ $('#unit-ctrl').addEventListener('click',e=>{ if(e.target.dataset.unit){ S.unit=
 $('#fmt-ctrl').addEventListener('click',e=>{ if(e.target.dataset.fmt){ S.fmt=e.target.dataset.fmt; setSeg('#fmt-ctrl',S.fmt,'fmt'); save(); } });
 $('#num-ctrl').addEventListener('click',e=>{ if(e.target.dataset.num){ S.numColor=e.target.dataset.num; setSeg('#num-ctrl',S.numColor,'num'); applyNum(); save(); } });
 function lighten(hex,amt){ const p=parseInt(hex.slice(1),16); const r=clamp(((p>>16)&255)+amt,0,255),g=clamp(((p>>8)&255)+amt,0,255),b=clamp((p&255)+amt,0,255); return '#'+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1); }
-$('#customcol').addEventListener('input',e=>{ const c=e.target.value; applyAccent(c, lighten(c,40)); applyNum(); save(); $$('#swatches .pill').forEach(p=>p.classList.remove('sel')); });
+$('#customcol').addEventListener('input',e=>{ const c=e.target.value; S.accentAuto=false; applyAccent(c, lighten(c,40)); applyNum(); save(); $$('#swatches .pill').forEach(p=>p.classList.remove('sel')); });
 
 /* settings open/close */
 $('#btn-settings').addEventListener('click',()=>{ $('#settings').classList.add('open'); refreshUI(); });
@@ -1409,7 +1622,7 @@ $('#installbtn').addEventListener('click',async()=>{ if(deferredPrompt){ deferre
 async function startExperience(){
   $('#intro').classList.add('gone');
   document.body.classList.add('chrome-hidden');
-  try{ await AudioEngine.useAmbient(); AudioEngine.ambient.pause(); AudioEngine.stop(); }catch(e){} // warm up audio ctx within gesture
+  await AudioEngine.warmup();                 // open + resume AudioContext within the gesture (no source created)
   if(S.mic){ try{ await AudioEngine.useMic(); state.audio._mic=true; }catch(e){ S.mic=false; } }
   else if(S.audio){ try{ await AudioEngine.useAmbient(); }catch(e){ S.audio=false; } }
   if(S.wake) requestWake();
