@@ -269,6 +269,11 @@ body.light #layer-flip .flip3d .fc.bottom,body.light #layer-flip .flip3d .fc.fli
 .tg::after{ content:""; position:absolute; top:3px; left:3px; width:23px; height:23px; border-radius:50%; background:#fff; transition:.2s;}
 .tg.on{ background:var(--accent); }
 .tg.on::after{ left:24px; }
+/* brightness slider */
+input[type=range].bright{ -webkit-appearance:none; appearance:none; width:150px; height:6px; border-radius:99px;
+  background:linear-gradient(90deg,var(--accent),rgba(255,255,255,.22)); outline:none; pointer-events:auto; cursor:pointer; }
+input[type=range].bright::-webkit-slider-thumb{ -webkit-appearance:none; appearance:none; width:20px; height:20px; border-radius:50%; background:#fff; box-shadow:0 0 8px var(--accent); cursor:pointer; }
+input[type=range].bright::-moz-range-thumb{ width:20px; height:20px; border:none; border-radius:50%; background:#fff; box-shadow:0 0 8px var(--accent); cursor:pointer; }
 /* segmented */
 .seg-ctrl{ display:flex; background:rgba(255,255,255,.08); border-radius:10px; padding:3px; }
 .seg-ctrl button{ pointer-events:auto; border:0; background:transparent; color:#fff; padding:6px 12px; border-radius:8px; font-size:13px; cursor:pointer; opacity:.6;}
@@ -378,12 +383,12 @@ body.secs #layer-seg .seg{ font-size:min(17vw,26vh); }
 
   <div id="stage">
     <!-- Aurora (StandBy) -->
-    <div class="layer" id="layer-aurora"><div class="stack">
+    <div class="layer" id="layer-aurora"><div class="stack fit">
       <div class="time" data-time>00:00</div><div class="sub" data-day>MONDAY</div>
     </div></div>
 
     <!-- Bold (iOS StandBy chunky two-tone) -->
-    <div class="layer" id="layer-bold"><div class="bold-wrap">
+    <div class="layer" id="layer-bold"><div class="bold-wrap fit">
       <span class="bd d" data-bd="0">0</span><span class="bd d" data-bd="1">0</span>
       <span class="bd colon"><i></i><i></i></span>
       <span class="bd d" data-bd="2">0</span><span class="bd d" data-bd="3">0</span>
@@ -392,17 +397,17 @@ body.secs #layer-seg .seg{ font-size:min(17vw,26vh); }
     </div></div>
 
     <!-- Neon -->
-    <div class="layer" id="layer-neon"><div class="neon-wrap">
+    <div class="layer" id="layer-neon"><div class="neon-wrap fit">
       <div class="time ntime">00:00</div>
       <div class="time reflect ntime" aria-hidden="true">00:00</div>
       <div class="sub" data-day>MONDAY</div>
     </div></div>
 
     <!-- Flip (3D split-flap; cards built in JS) -->
-    <div class="layer" id="layer-flip"><div class="flip-row" id="flip-row"></div></div>
+    <div class="layer" id="layer-flip"><div class="flip-row fit" id="flip-row"></div></div>
 
     <!-- Seven-segment -->
-    <div class="layer" id="layer-seg"><div class="stack">
+    <div class="layer" id="layer-seg"><div class="stack fit">
       <div class="panel"><div class="seg-wrap">
         <div class="seg ghost">88:88</div>
         <div class="seg lit" data-time>00:00</div>
@@ -411,17 +416,17 @@ body.secs #layer-seg .seg{ font-size:min(17vw,26vh); }
     </div></div>
 
     <!-- Word clock -->
-    <div class="layer" id="layer-word"><div class="grid" data-wordgrid></div></div>
+    <div class="layer" id="layer-word"><div class="grid fit" data-wordgrid></div></div>
 
     <!-- Glass (holographic) -->
-    <div class="layer" id="layer-glass"><div class="glasscard">
+    <div class="layer" id="layer-glass"><div class="glasscard fit">
       <div class="time" data-time>00:00</div><div class="sub" data-day>MONDAY</div>
     </div></div>
 
     <!-- Synthwave -->
     <div class="layer" id="layer-synth">
       <div class="sun"></div><div class="grid"></div>
-      <div class="stack">
+      <div class="stack fit">
         <div class="glitch" data-time data-time-attr="1">00:00</div>
         <div class="sub" data-day>MONDAY</div>
       </div>
@@ -473,7 +478,8 @@ body.secs #layer-seg .seg{ font-size:min(17vw,26vh); }
 
       <div class="sect">Display</div>
       <div class="row"><div class="lbl">Time format</div><div class="seg-ctrl" id="fmt-ctrl"><button data-fmt="24" class="sel">24h</button><button data-fmt="12">12h</button></div></div>
-      <div class="row"><div class="lbl">Show seconds</div><div class="tg" id="tg-secs"></div></div>
+      <div class="row"><div class="lbl">Show seconds<small>Applies to every face that can show them</small></div><div class="tg" id="tg-secs"></div></div>
+      <div class="row"><div class="lbl">Brightness</div><input type="range" min="20" max="100" value="100" class="bright" id="bright" /></div>
       <div class="row"><div class="lbl">Keep screen awake<small>Wake Lock · re-armed automatically</small></div><div class="tg on" id="tg-wake"></div></div>
       <div class="row"><div class="lbl">Auto night dimming<small>Dims + warms after sunset</small></div><div class="tg on" id="tg-night"></div></div>
       <div class="row"><div class="lbl">Burn-in drift<small>Slowly nudges pixels (OLED safe)</small></div><div class="tg on" id="tg-drift"></div></div>
@@ -513,7 +519,7 @@ const DEFAULTS={
   mic:false, audio:false, weather:false, wfx:true,
   wake:true, night:true, drift:true,
   accent:'#6ad5ff', accent2:'#b892ff', accentAuto:true,
-  bg:'auto', font:'Poppins', numColor:'default'
+  bg:'auto', font:'Poppins', numColor:'default', brightness:100
 };
 let S=Object.assign({},DEFAULTS);
 try{ const saved=JSON.parse(localStorage.getItem('lumina')||'{}'); Object.assign(S,saved);
@@ -814,9 +820,9 @@ function updateSky(){
 
 /* ---------- night dimming + burn-in drift ---------- */
 function applyDim(){
-  let dim=1;
-  if(S.night && state.sky.night) dim=0.55;
-  document.documentElement.style.setProperty('--dim',dim);
+  let dim=(S.brightness||100)/100;               // manual brightness slider
+  if(S.night && state.sky.night) dim*=0.62;      // extra night dimming
+  document.documentElement.style.setProperty('--dim', dim.toFixed(3));
 }
 let driftX=0,driftY=0;
 function applyDrift(){
@@ -874,9 +880,25 @@ function resize(){
   vizx.setTransform(state.dpr,0,0,state.dpr,0,0);
   if(activeTheme&&activeTheme.layout) activeTheme.layout();
   buildWordGrid();
+  requestAnimationFrame(fitStage);
+}
+/* Scale the active DOM face to fill the viewport (either orientation) and,
+   crucially, shrink it if it would overflow — so nothing is ever cut off and
+   the corner date/weather chrome keeps its room. Canvas faces fill natively. */
+function fitStage(){
+  const layer=document.querySelector('.layer.active'); const stage=$('#stage');
+  if(!layer||!stage) return;
+  const el=layer.querySelector('.fit'); if(!el) return;
+  el.style.transform='none';
+  const r=el.getBoundingClientRect();
+  if(!r.width||!r.height) return;
+  const availW=stage.clientWidth*0.95, availH=stage.clientHeight*0.88;
+  const scale=Math.max(0.2, Math.min(availW/r.width, availH/r.height, 2.4));
+  el.style.transformOrigin='center center';
+  el.style.transform='scale('+scale.toFixed(3)+')';
 }
 addEventListener('resize',resize);
-screen.orientation&&screen.orientation.addEventListener?.('change',()=>setTimeout(resize,120));
+screen.orientation&&screen.orientation.addEventListener?.('change',()=>setTimeout(resize,150));
 
 /* =========================================================
    GLYPH MASK — rasterize the time to sample points/pixels
@@ -931,6 +953,7 @@ function setTheme(id,flash){
   if(activeTheme.init) activeTheme.init();
   if(activeTheme.layout) activeTheme.layout();
   updateThemeUI();
+  updateDomFaces(); requestAnimationFrame(fitStage);   // fill screen / prevent cutoff for the new face
   if(flash){ const f=$('#themeflash'); f.textContent=activeTheme.name; f.classList.add('show');
     clearTimeout(f._t); f._t=setTimeout(()=>f.classList.remove('show'),900); }
 }
@@ -1537,11 +1560,12 @@ function refreshUI(){
   setTg('#tg-secs',S.secs); setTg('#tg-wake',S.wake); setTg('#tg-night',S.night); setTg('#tg-drift',S.drift);
   setSeg('#unit-ctrl',S.unit,'unit'); setSeg('#fmt-ctrl',S.fmt,'fmt'); setSeg('#num-ctrl',S.numColor,'num');
   const cc=$('#customcol'); if(cc) cc.value=S.accent;
+  const br=$('#bright'); if(br) br.value=S.brightness||100;
 }
 
 /* toggle handlers */
 function onTg(id,key,after){ $(id).addEventListener('click',async()=>{ S[key]=!S[key]; setTg(id,S[key]); save(); if(after) await after(S[key]); }); }
-onTg('#tg-wfx','wfx'); onTg('#tg-secs','secs',(v)=>document.body.classList.toggle('secs',v)); onTg('#tg-drift','drift',(v)=>{ if(!v)$('#stage').style.transform=''; });
+onTg('#tg-wfx','wfx'); onTg('#tg-secs','secs',(v)=>{document.body.classList.toggle('secs',v); requestAnimationFrame(fitStage);}); onTg('#tg-drift','drift',(v)=>{ if(!v)$('#stage').style.transform=''; });
 onTg('#tg-night','night'); onTg('#tg-wake','wake',(v)=>{ if(v)requestWake(); else if(wakeLock){wakeLock.release();wakeLock=null;} });
 
 $('#tg-mic').addEventListener('click',async()=>{
@@ -1567,10 +1591,11 @@ $('#tg-weather').addEventListener('click',async()=>{
   if(S.weather){ await Weather.fetchNow(); } Weather.renderChip();
 });
 function noteAudio(m){ $('#audio-note').textContent=m||''; }
+$('#bright').addEventListener('input',e=>{ S.brightness=+e.target.value; applyDim(); save(); });
 
 /* segmented controls */
 $('#unit-ctrl').addEventListener('click',e=>{ if(e.target.dataset.unit){ S.unit=e.target.dataset.unit; setSeg('#unit-ctrl',S.unit,'unit'); save(); Weather.renderChip(); } });
-$('#fmt-ctrl').addEventListener('click',e=>{ if(e.target.dataset.fmt){ S.fmt=e.target.dataset.fmt; setSeg('#fmt-ctrl',S.fmt,'fmt'); save(); } });
+$('#fmt-ctrl').addEventListener('click',e=>{ if(e.target.dataset.fmt){ S.fmt=e.target.dataset.fmt; setSeg('#fmt-ctrl',S.fmt,'fmt'); save(); updateDomFaces(); requestAnimationFrame(fitStage); } });
 $('#num-ctrl').addEventListener('click',e=>{ if(e.target.dataset.num){ S.numColor=e.target.dataset.num; setSeg('#num-ctrl',S.numColor,'num'); applyNum(); save(); } });
 function lighten(hex,amt){ const p=parseInt(hex.slice(1),16); const r=clamp(((p>>16)&255)+amt,0,255),g=clamp(((p>>8)&255)+amt,0,255),b=clamp((p&255)+amt,0,255); return '#'+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1); }
 $('#customcol').addEventListener('input',e=>{ const c=e.target.value; S.accentAuto=false; applyAccent(c, lighten(c,40)); applyNum(); save(); $$('#swatches .pill').forEach(p=>p.classList.remove('sel')); });
@@ -1639,6 +1664,8 @@ function init(){
   refreshUI();
   Weather.renderChip();
   if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
+  if(document.fonts&&document.fonts.ready){ document.fonts.ready.then(()=>{ resize(); }); } // re-fit once webfonts load
+  setTimeout(fitStage,300);
   requestAnimationFrame(loop);
   // if launched already-installed, skip intro
   if(window.navigator.standalone||matchMedia('(display-mode: standalone)').matches){ /* still show intro for gesture-gated APIs */ }
