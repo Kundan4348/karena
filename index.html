@@ -55,7 +55,11 @@ body{ filter:brightness(var(--dim)); transition:filter .8s ease, background .8s 
 /* ---- Stage & layers ---- */
 #stage{
   position:fixed; inset:0;
-  padding:var(--safe-t) var(--safe-r) var(--safe-b) var(--safe-l);
+  /* reserve top strip (Dynamic Island + weather chip) and bottom strip (date + now-playing)
+     so the clock is centred BETWEEN them and never slides under the island or the chrome */
+  padding:
+    calc(var(--safe-t) + 8.5vmin) calc(var(--safe-r) + 3.5vw)
+    calc(var(--safe-b) + 8.5vmin) calc(var(--safe-l) + 3.5vw);
   display:flex; align-items:center; justify-content:center;
 }
 #bgcanvas{ position:fixed; inset:0; width:100%; height:100%; display:block; z-index:0; }
@@ -369,6 +373,20 @@ body.secs #layer-seg .seg{ font-size:min(17vw,26vh); }
 #layer-synth .scan{ position:absolute; inset:0; pointer-events:none; z-index:4;
   background:repeating-linear-gradient(0deg,rgba(0,0,0,.22) 0 1px,transparent 1px 3px); mix-blend-mode:multiply; }
 
+/* ================= MINIMAL (editorial thin typographic) ================= */
+#layer-minimal .time{ font-family:var(--clockfont),'Sora',sans-serif; font-weight:200; font-variant-numeric:tabular-nums;
+  font-size:min(30vw,40vh); letter-spacing:.01em; line-height:.95; color:var(--num); }
+#layer-minimal .sub{ font-weight:300; letter-spacing:.5em; text-transform:uppercase; opacity:.55; font-size:min(4vw,3vh); margin-top:1.4vh; }
+
+/* ================= NIXIE (warm glow tubes) ================= */
+#layer-nixie .nixie-seg{ position:relative; font-family:'Fredoka','Poppins',serif; font-weight:600; font-size:min(26vw,34vh); line-height:1; letter-spacing:.04em; }
+#layer-nixie .ghost{ position:absolute; inset:0; color:rgba(255,120,0,.10); }
+#layer-nixie .lit{ position:relative; color:#ffb85c;
+  text-shadow:0 0 3px #ffae52, 0 0 12px #ff8c1a, 0 0 30px rgba(255,90,0,.7), 0 0 60px rgba(255,60,0,.4); animation:nixieIonize 4s infinite; }
+@keyframes nixieIonize{ 0%,96%{filter:brightness(1);} 97%{filter:brightness(1.07);} 100%{filter:brightness(.98);} }
+#layer-nixie .sub{ font-family:'Fredoka','Poppins',sans-serif; letter-spacing:.34em; text-transform:uppercase; opacity:.8; margin-top:2.2vh;
+  color:#ffb85c; text-shadow:0 0 12px #ff6a00; }
+
 @media (prefers-reduced-motion: reduce){
   .flip3d.go .flip-top,.flip3d.go .flip-bottom{ animation-duration:.01s; }
   #layer-neon .time .fl,#layer-glass .glasscard::before,#layer-glass .glasscard::after,#layer-synth .grid{ animation:none; }
@@ -432,6 +450,17 @@ body.secs #layer-seg .seg{ font-size:min(17vw,26vh); }
       </div>
       <div class="scan"></div>
     </div>
+
+    <!-- Minimal (editorial thin) -->
+    <div class="layer" id="layer-minimal"><div class="stack fit">
+      <div class="time" data-time>00:00</div><div class="sub" data-day>MONDAY</div>
+    </div></div>
+
+    <!-- Nixie (warm glow tubes) -->
+    <div class="layer" id="layer-nixie"><div class="stack fit">
+      <div class="nixie-seg"><span class="ghost">88:88</span><span class="lit" data-time>00:00</span></div>
+      <div class="sub" data-day>MONDAY</div>
+    </div></div>
   </div>
 
   <!-- chrome overlays -->
@@ -566,6 +595,9 @@ const BG={
 const PALETTES={
   aurora:{bg:{type:'grad',a:'#0F2027',b:'#2C5364'},accent:'#6ad5ff',accent2:'#b892ff'},
   bold:{bg:{type:'solid',c:'#000000'},accent:'#2f6fe0',accent2:'#6db3ff'},
+  minimal:{bg:{type:'solid',c:'#0a0a0c'},accent:'#e8e8ee',accent2:'#ff4d00'},
+  nixie:{bg:{type:'grad',a:'#2a1405',b:'#0a0402'},accent:'#ff7a18',accent2:'#ffd15c'},
+  binary:{bg:{type:'solid',c:'#03060a'},accent:'#39ff14',accent2:'#00e5ff'},
   neon:{bg:{type:'solid',c:'#07070d'},accent:'#ff2e97',accent2:'#12fff7'},
   flip:{bg:{type:'grad',a:'#17171c',b:'#050506'},accent:'#7fd0ff',accent2:'#b892ff'},
   seg:{bg:{type:'solid',c:'#060404'},accent:'#ff4b3c',accent2:'#ffb000'},
@@ -878,9 +910,20 @@ function resize(){
   bgx.setTransform(state.dpr,0,0,state.dpr,0,0);
   wfxx.setTransform(state.dpr,0,0,state.dpr,0,0);
   vizx.setTransform(state.dpr,0,0,state.dpr,0,0);
+  computeSafeBox();
   if(activeTheme&&activeTheme.layout) activeTheme.layout();
   buildWordGrid();
   requestAnimationFrame(fitStage);
+}
+/* safe content box = stage minus its reserved padding (island + chrome zones).
+   Canvas faces center their dials here so they never reach the island/chrome. */
+function computeSafeBox(){
+  const stage=$('#stage'); const cs=getComputedStyle(stage);
+  const pT=parseFloat(cs.paddingTop)||0, pB=parseFloat(cs.paddingBottom)||0,
+        pL=parseFloat(cs.paddingLeft)||0, pR=parseFloat(cs.paddingRight)||0;
+  const cw=Math.max(10, state.w-pL-pR), ch=Math.max(10, state.h-pT-pB);
+  state.box={x:pL, y:pT, w:cw, h:ch};
+  state.cx=pL+cw/2; state.cy=pT+ch/2; state.cmin=Math.min(cw,ch);
 }
 /* Scale the active DOM face to fill the viewport (either orientation) and,
    crucially, shrink it if it would overflow — so nothing is ever cut off and
@@ -892,8 +935,9 @@ function fitStage(){
   el.style.transform='none';
   const r=el.getBoundingClientRect();
   if(!r.width||!r.height) return;
-  const availW=stage.clientWidth*0.95, availH=stage.clientHeight*0.88;
-  const scale=Math.max(0.2, Math.min(availW/r.width, availH/r.height, 2.4));
+  const box=state.box||{w:stage.clientWidth,h:stage.clientHeight};
+  const availW=box.w*0.98, availH=box.h*0.98;   // box already excludes island + chrome zones
+  const scale=Math.max(0.2, Math.min(availW/r.width, availH/r.height, 2.6));
   el.style.transformOrigin='center center';
   el.style.transform='scale('+scale.toFixed(3)+')';
 }
@@ -997,14 +1041,14 @@ function drawSkyBackdrop(){
 let beatRings=[], vizP=[];
 function vzBreathe(){                       // universal soft bass bloom
   const a=state.audio; if(a.level<=0.015) return;
-  const {w,h}=state, cx=w/2, cy=h/2, rad=Math.max(w,h)*(0.30+a.bass*0.42), al=0.05+a.bass*0.26;
+  const {w,h}=state, cx=state.cx, cy=state.cy, rad=Math.max(w,h)*(0.30+a.bass*0.42), al=0.05+a.bass*0.26;
   const g=vizx.createRadialGradient(cx,cy,0,cx,cy,rad);
   g.addColorStop(0,hexA(S.accent,al)); g.addColorStop(1,hexA(S.accent,0));
   vizx.save(); vizx.globalCompositeOperation='lighter'; vizx.fillStyle=g; vizx.fillRect(0,0,w,h); vizx.restore();
 }
 function vzRadialBars(R){                    // spectrum arranged around a circle (mirrored) — no shadowBlur (perf)
   const f=AudioEngine.freqData(); if(!f) return;
-  const {w,h}=state, cx=w/2, cy=h/2, N=72, step=Math.max(1,Math.floor(f.length*0.55/(N/2)));
+  const {w,h}=state, cx=state.cx, cy=state.cy, N=72, step=Math.max(1,Math.floor(f.length*0.55/(N/2)));
   const maxLen=Math.min(w,h)*0.16, lw=Math.max(2,Math.min(w,h)*0.006);
   vizx.save(); vizx.translate(cx,cy); vizx.globalCompositeOperation='lighter';
   for(let i=0;i<N;i++){ const mir=i<N/2?i:N-1-i; const v=(f[mir*step]||0)/255, len=6+v*v*maxLen;
@@ -1017,7 +1061,7 @@ function vzRadialBars(R){                    // spectrum arranged around a circl
 }
 function vzRadialBlob(R){                     // liquid morphing outline (holographic)
   const f=AudioEngine.freqData(); if(!f) return;
-  const {w,h}=state, cx=w/2, cy=h/2, N=120, pts=[], amp=Math.min(w,h)*0.14;
+  const {w,h}=state, cx=state.cx, cy=state.cy, N=120, pts=[], amp=Math.min(w,h)*0.14;
   for(let i=0;i<N;i++){ const a=(i/N)*TAU, band=(f[(i*3)%f.length]||0)/255;
     const wob=Math.sin(a*5+state.t*0.6)*0.06+Math.sin(a*3-state.t*0.4)*0.04;
     const r=R*(1+wob)+band*amp; pts.push([cx+Math.cos(a)*r, cy+Math.sin(a)*r]); }
@@ -1030,7 +1074,7 @@ function vzRadialBlob(R){                     // liquid morphing outline (hologr
   vizx.fillStyle=g; vizx.shadowBlur=28; vizx.shadowColor=S.accent; vizx.fill(); vizx.restore();
 }
 function vzRings(){                            // shockwaves emitted on beat
-  const {w,h}=state, cx=w/2, cy=h/2, MAX=Math.min(w,h)*0.6;
+  const {w,h}=state, cx=state.cx, cy=state.cy, MAX=Math.min(w,h)*0.6;
   if(state.audio.beat>0.6) beatRings.push({r:Math.min(w,h)*0.05, life:1});
   vizx.save(); vizx.globalCompositeOperation='lighter';
   for(let i=beatRings.length-1;i>=0;i--){ const b=beatRings[i]; b.life-=0.02; b.r=lerp(b.r,MAX,0.06);
@@ -1050,7 +1094,7 @@ function vzScope(y){                            // linear oscilloscope (glow, 2-
 }
 function vzScopeCircular(R){                     // elegant oscilloscope halo (suits glass)
   const t=AudioEngine.timeData(); if(!t) return;
-  const {w,h}=state, cx=w/2, cy=h/2, N=t.length, amp=Math.min(w,h)*0.06;
+  const {w,h}=state, cx=state.cx, cy=state.cy, N=t.length, amp=Math.min(w,h)*0.06;
   vizx.save(); vizx.translate(cx,cy); vizx.globalCompositeOperation='lighter';
   for(let pass=0;pass<2;pass++){ vizx.beginPath();
     for(let i=0;i<=N;i++){ const v=(t[i%N]-128)/128, a=(i/N)*TAU, r=R+v*amp; i?vizx.lineTo(Math.cos(a)*r,Math.sin(a)*r):vizx.moveTo(Math.cos(a)*r,Math.sin(a)*r); }
@@ -1058,7 +1102,7 @@ function vzScopeCircular(R){                     // elegant oscilloscope halo (s
   vizx.restore();
 }
 function vzParticles(fromEdge){                 // beat bursts + level-driven drift
-  const {w,h}=state, cx=w/2, cy=h/2, a=state.audio;
+  const {w,h}=state, cx=state.cx, cy=state.cy, a=state.audio;
   if(a.beat>0.6){ for(let i=0;i<28;i++){ const ang=Math.random()*TAU, sp=(1+Math.random()*3)*(0.6+a.beat)*3.2;
     const x=fromEdge?Math.random()*w:cx, y=fromEdge?Math.random()*h:cy;
     vizP.push({x,y,vx:Math.cos(ang)*sp,vy:Math.sin(ang)*sp,life:1,r:1+Math.random()*2.2}); } }
@@ -1274,11 +1318,13 @@ function hexA(hex,a){ const p=parseInt(hex.slice(1),16); return `rgba(${(p>>16)&
 /* FACE: NEON / FLIP / SEG / WORD are DOM-driven (canvas draws sky backdrop) */
 registerTheme('bold',{ name:'Bold', desc:'StandBy chunky two-tone', kind:'dom',
   draw(){ const s=1+state.audio.beat*0.03; $$('#layer-bold .d').forEach(el=>el.style.transform=`scale(${s.toFixed(3)})`); } });
+registerTheme('minimal',{ name:'Minimal', desc:'Editorial thin type', kind:'dom' });
 registerTheme('neon',{ name:'Neon', desc:'Glowing tube numerals', kind:'dom',
   draw(){ const g=0.6+state.audio.bass*1.5; if(Math.abs(g-(this._g||0))>0.05){ this._g=g; $('#layer-neon').style.setProperty('--glow',g.toFixed(2)); } }
 });
 registerTheme('flip',{ name:'Flip', desc:'3D split-flap cards', kind:'dom', init(){ buildFlip(); } });
 registerTheme('seg',{ name:'Seven-Seg', desc:'Recessed LED panel', kind:'dom' });
+registerTheme('nixie',{ name:'Nixie', desc:'Warm glow tubes', kind:'dom' });
 registerTheme('word',{ name:'Word', desc:'Time spelled in words', kind:'dom', init(){ buildWordGrid(); updateWord(); },
   draw(){ const g=(14+state.audio.level*30+state.audio.beat*16).toFixed(1); document.documentElement.style.setProperty('--wglow',g+'px'); } });
 registerTheme('glass',{ name:'Glass', desc:'Holographic glass card', kind:'dom' });
@@ -1289,7 +1335,7 @@ registerTheme('glass',{ name:'Glass', desc:'Holographic glass card', kind:'dom' 
 registerTheme('analog',{ name:'Analog', desc:'Metallic sweep hands', kind:'canvas',
   draw(){
     const {w,h}=state; paintBase(bgx);
-    const cx=w/2, cy=h/2, R=Math.min(w,h)*0.42, light=isLight();
+    const cx=state.cx, cy=state.cy, R=state.cmin*0.46, light=isLight();
     bgx.save();
     let g=bgx.createLinearGradient(cx,cy-R,cx,cy+R);
     g.addColorStop(0,'#e8e8ec'); g.addColorStop(.49,'#82828a'); g.addColorStop(.5,'#c6c6ce'); g.addColorStop(1,'#484850');
@@ -1323,7 +1369,7 @@ registerTheme('analog',{ name:'Analog', desc:'Metallic sweep hands', kind:'canva
 registerTheme('hud',{ name:'HUD', desc:'Tron glowing rings', kind:'canvas',
   draw(){
     const {w,h}=state; paintBase(bgx);
-    const cx=w/2, cy=h/2, R=Math.min(w,h)*0.40;
+    const cx=state.cx, cy=state.cy, R=state.cmin*0.44;
     const now=state.now, sf=(now.getSeconds()+now.getMilliseconds()/1000)/60, m=(now.getMinutes()+sf)/60, hr=(now.getHours()%12+m)/12;
     const arc=(r,frac,color,wd)=>{ bgx.beginPath(); bgx.strokeStyle=color; bgx.lineWidth=wd; bgx.lineCap='round';
       bgx.shadowColor=color; bgx.shadowBlur=16+state.audio.level*24; bgx.arc(cx,cy,r,-Math.PI/2,-Math.PI/2+frac*TAU); bgx.stroke(); bgx.shadowBlur=0; };
@@ -1346,6 +1392,23 @@ registerTheme('hud',{ name:'HUD', desc:'Tron glowing rings', kind:'canvas',
 /* =========================================================
    FACE: SYNTHWAVE — grid horizon + chromatic aberration + scanlines
    ========================================================= */
+registerTheme('binary',{ name:'Binary', desc:'LED dot matrix (BCD)', kind:'canvas',
+  draw(){
+    paintBase(bgx);
+    const now=state.now, cols=[(now.getHours()/10)|0, now.getHours()%10, (now.getMinutes()/10)|0, now.getMinutes()%10, (now.getSeconds()/10)|0, now.getSeconds()%10];
+    const rows=4, unit=state.cmin/9, gapx=unit*1.5, rowGap=unit*1.2;
+    const startX=state.cx-(cols.length-1)*gapx/2, startY=state.cy-(rows-1)*rowGap/2 - rowGap*0.5, dotR=unit*0.34;
+    for(let c=0;c<cols.length;c++){ const v=cols[c], x=startX+c*gapx, col=mixHex(S.accent,S.accent2,c/cols.length);
+      for(let b=0;b<rows;b++){ const on=(v>>(rows-1-b))&1, y=startY+b*rowGap;
+        bgx.beginPath(); bgx.arc(x,y,dotR,0,TAU);
+        if(on){ bgx.fillStyle=col; bgx.shadowColor=col; bgx.shadowBlur=14+state.audio.level*22; } else { bgx.fillStyle=hexA(col,0.12); bgx.shadowBlur=0; }
+        bgx.fill(); }
+    }
+    bgx.shadowBlur=0; const T=timeStr(); bgx.fillStyle=hexA('#ffffff',0.85); bgx.textAlign='center'; bgx.textBaseline='middle';
+    bgx.font=`600 ${unit*1.05}px 'Space Mono', monospace`; bgx.fillText(T.text, state.cx, startY+rows*rowGap+unit*0.7);
+    bgx.textAlign='left'; bgx.textBaseline='alphabetic';
+  }
+});
 let synthLastS=-1;
 registerTheme('synth',{ name:'Synthwave', desc:'Neon grid + glitch', kind:'dom', noBackdrop:true,
   draw(){ const el=$('#layer-synth .glitch'); if(!el) return; const s=state.now.getSeconds();
@@ -1458,7 +1521,7 @@ let stars2=[];
 registerTheme('solaris',{ name:'Solaris', desc:'Time told by orbits', kind:'canvas',
   init(){ stars2=[]; for(let i=0;i<120;i++) stars2.push({x:Math.random(),y:Math.random(),s:Math.random()*1.2+0.2,ph:Math.random()*TAU}); },
   draw(){
-    const {w,h}=state, cx=w/2, cy=h/2, R=Math.min(w,h)*0.42;
+    const {w,h}=state, cx=state.cx, cy=state.cy, R=state.cmin*0.46;
     bgx.fillStyle='#03030a'; bgx.fillRect(0,0,w,h);
     for(const s of stars2){ bgx.fillStyle=`rgba(255,255,255,${0.2+0.5*Math.sin(state.t+s.ph)})`; bgx.beginPath(); bgx.arc(s.x*w,s.y*h,s.s,0,TAU); bgx.fill(); }
     const d=state.now, sec=d.getSeconds()+d.getMilliseconds()/1000, min=d.getMinutes()+sec/60, hr=(d.getHours()%12)+min/60;
