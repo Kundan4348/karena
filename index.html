@@ -540,6 +540,7 @@ const $  = (s,r=document)=>r.querySelector(s);
 const $$ = (s,r=document)=>Array.from(r.querySelectorAll(s));
 const clamp=(v,a,b)=>v<a?a:v>b?b:v;
 const lerp=(a,b,t)=>a+(b-a)*t;
+const easeOutBack=(t)=>{ const c1=1.70158,c3=c1+1; return 1+c3*Math.pow(t-1,3)+c1*Math.pow(t-1,2); };
 const TAU=Math.PI*2;
 
 /* ---------- persisted settings ---------- */
@@ -598,6 +599,8 @@ const PALETTES={
   minimal:{bg:{type:'solid',c:'#0a0a0c'},accent:'#e8e8ee',accent2:'#ff4d00'},
   nixie:{bg:{type:'grad',a:'#2a1405',b:'#0a0402'},accent:'#ff7a18',accent2:'#ffd15c'},
   binary:{bg:{type:'solid',c:'#03060a'},accent:'#39ff14',accent2:'#00e5ff'},
+  soft:{bg:{type:'solid',c:'#e9eaef'},accent:'#ff6f61',accent2:'#9aa0b5',light:true},
+  cartoon:{bg:{type:'grad',a:'#eef0f4',b:'#dfe3ea'},accent:'#e64a3b',accent2:'#ff8a7a',light:true},
   neon:{bg:{type:'solid',c:'#07070d'},accent:'#ff2e97',accent2:'#12fff7'},
   flip:{bg:{type:'grad',a:'#17171c',b:'#050506'},accent:'#7fd0ff',accent2:'#b892ff'},
   seg:{bg:{type:'solid',c:'#060404'},accent:'#ff4b3c',accent2:'#ffb000'},
@@ -614,7 +617,7 @@ const PALETTES={
 };
 const bgDef=()=>BG[S.bg]||BG.auto;
 const facePal=()=>(activeTheme&&PALETTES[activeTheme.id])||PALETTES.aurora;
-const isLight=()=>{ const d=bgDef(); return d.type==='auto'?false:!!d.light; };
+const isLight=()=>{ const d=bgDef(); return d.type==='auto'?!!facePal().light:!!d.light; };
 function paintSpec(ctx,spec){
   const w=state.w,h=state.h;
   if(!spec||spec.type==='sky'){ const g=ctx.createLinearGradient(0,0,0,h); g.addColorStop(0,state.sky.a); g.addColorStop(1,state.sky.b); ctx.fillStyle=g; }
@@ -625,7 +628,7 @@ function paintSpec(ctx,spec){
 function paintBase(ctx){ const d=bgDef(); paintSpec(ctx, d.type==='auto'?facePal().bg:d); }
 function applyBg(){
   const d=bgDef(); let bgc, light;
-  if(d.type==='auto'){ const s=facePal().bg; bgc=s.type==='solid'?s.c:(s.a||'#000'); light=false; }
+  if(d.type==='auto'){ const s=facePal().bg; bgc=s.type==='solid'?s.c:(s.a||'#000'); light=!!facePal().light; }
   else { bgc=d.type==='solid'?d.c:(d.a||d.base||'#000'); light=!!d.light; }
   document.documentElement.style.setProperty('--bg', bgc);
   document.body.classList.toggle('light', light);
@@ -1407,6 +1410,80 @@ registerTheme('binary',{ name:'Binary', desc:'LED dot matrix (BCD)', kind:'canva
     bgx.shadowBlur=0; const T=timeStr(); bgx.fillStyle=hexA('#ffffff',0.85); bgx.textAlign='center'; bgx.textBaseline='middle';
     bgx.font=`600 ${unit*1.05}px 'Space Mono', monospace`; bgx.fillText(T.text, state.cx, startY+rows*rowGap+unit*0.7);
     bgx.textAlign='left'; bgx.textBaseline='alphabetic';
+  }
+});
+registerTheme('soft',{ name:'Soft', desc:'Neumorphic dial + digital', kind:'canvas',
+  draw(){
+    const {w,h,box}=state, light=isLight(), now=state.now;
+    const base = light ? '#e9eaef' : '#212226';
+    bgx.fillStyle=base; bgx.fillRect(0,0,w,h);              // neumorphism needs a matching mid-tone bg
+    const cx=state.cx, R=Math.min(box.w*0.42, box.h*0.30);
+    const cyDial=box.y + box.h*0.62, cyTime=box.y + box.h*0.15;
+    const ink = light ? '#2a2b31' : '#f2f2f5';
+    // digital time + day
+    bgx.textAlign='center'; bgx.textBaseline='middle';
+    bgx.fillStyle=ink; bgx.font=`700 ${R*0.62}px 'Fredoka','Poppins',sans-serif`;
+    bgx.fillText(timeStr().text, cx, cyTime);
+    bgx.font=`400 ${Math.max(11,R*0.12)}px 'Space Grotesk',sans-serif`;
+    bgx.fillStyle= light?'rgba(40,40,55,.5)':'rgba(240,240,245,.5)';
+    bgx.fillText(DAYS[now.getDay()]+' · '+now.getDate()+' '+MON[now.getMonth()], cx, cyTime + R*0.52);
+    // neumorphic raised dial (dual shadow: dark bottom-right + light top-left)
+    bgx.save(); bgx.fillStyle=base;
+    bgx.shadowColor= light?'rgba(163,169,184,0.9)':'rgba(0,0,0,0.55)'; bgx.shadowBlur=R*0.3; bgx.shadowOffsetX=R*0.12; bgx.shadowOffsetY=R*0.12;
+    bgx.beginPath(); bgx.arc(cx,cyDial,R,0,TAU); bgx.fill();
+    bgx.shadowColor= light?'rgba(255,255,255,0.95)':'rgba(255,255,255,0.06)'; bgx.shadowOffsetX=-R*0.12; bgx.shadowOffsetY=-R*0.12;
+    bgx.beginPath(); bgx.arc(cx,cyDial,R,0,TAU); bgx.fill(); bgx.restore();
+    const sheen=bgx.createRadialGradient(cx-R*0.4,cyDial-R*0.4,R*0.1,cx,cyDial,R*1.1);
+    sheen.addColorStop(0, light?'rgba(255,255,255,0.5)':'rgba(255,255,255,0.05)');
+    sheen.addColorStop(1, light?'rgba(200,205,220,0.12)':'rgba(0,0,0,0.28)');
+    bgx.fillStyle=sheen; bgx.beginPath(); bgx.arc(cx,cyDial,R,0,TAU); bgx.fill();
+    // sun / moon indicator near top of dial
+    const day = now.getHours()>=6 && now.getHours()<18, ix=cx, iy=cyDial-R*0.55, ir=R*0.11;
+    if(day){ bgx.fillStyle='#ffb14e'; bgx.strokeStyle='#ff9f43'; bgx.lineWidth=Math.max(1.5,R*0.02);
+      bgx.beginPath(); bgx.arc(ix,iy,ir*0.6,0,TAU); bgx.fill();
+      for(let k=0;k<8;k++){ const a=k/8*TAU; bgx.beginPath(); bgx.moveTo(ix+Math.cos(a)*ir*0.95,iy+Math.sin(a)*ir*0.95); bgx.lineTo(ix+Math.cos(a)*ir*1.35,iy+Math.sin(a)*ir*1.35); bgx.stroke(); } }
+    else { bgx.fillStyle= light?'#8b90a6':'#cdd3e8'; bgx.beginPath(); bgx.arc(ix,iy,ir*0.72,0,TAU); bgx.fill();
+      bgx.fillStyle=base; bgx.beginPath(); bgx.arc(ix+ir*0.3,iy-ir*0.16,ir*0.64,0,TAU); bgx.fill(); }
+    // minimal hands
+    const s=now.getSeconds()+now.getMilliseconds()/1000, m=now.getMinutes()+s/60, hr=now.getHours()%12+m/60;
+    const muted = light?'#9aa0b5':'#71717b';
+    const hand=(ang,len,wd,col)=>{ bgx.save(); bgx.translate(cx,cyDial); bgx.rotate(ang); bgx.lineCap='round'; bgx.lineWidth=wd; bgx.strokeStyle=col; bgx.beginPath(); bgx.moveTo(0,wd); bgx.lineTo(0,-len); bgx.stroke(); bgx.restore(); };
+    hand(hr*Math.PI/6, R*0.5, R*0.055, muted);
+    hand(m*Math.PI/30, R*0.72, R*0.04, muted);
+    hand(s*Math.PI/30, R*0.78, Math.max(1.4,R*0.014), S.accent);
+    bgx.fillStyle=muted; bgx.beginPath(); bgx.arc(cx,cyDial,R*0.045,0,TAU); bgx.fill();
+    bgx.fillStyle=S.accent; bgx.beginPath(); bgx.arc(cx,cyDial,R*0.02,0,TAU); bgx.fill();
+    bgx.textAlign='left'; bgx.textBaseline='alphabetic';
+  }
+});
+registerTheme('cartoon',{ name:'Cartoon', desc:'Bouncy sticker clock', kind:'canvas',
+  draw(){
+    const {box}=state; paintBase(bgx);
+    const cx=state.cx, cy=state.cy, R=Math.min(box.w,box.h)*0.42, now=state.now;
+    const outline='#1c1c22', bezel=S.accent, bezelIn=lighten(S.accent,26);
+    const rock=Math.sin(state.t*1.6)*0.05, beat=state.audio.beat;   // gentle hanging rock + beat squash
+    bgx.save(); bgx.translate(cx,cy); bgx.rotate(rock); bgx.scale(1+beat*0.06, 1-beat*0.04); bgx.lineCap='round';
+    // red bezel + black outline
+    bgx.beginPath(); bgx.arc(0,0,R,0,TAU); bgx.fillStyle=bezel; bgx.fill(); bgx.lineWidth=R*0.06; bgx.strokeStyle=outline; bgx.stroke();
+    // lighter inner ring
+    bgx.beginPath(); bgx.arc(0,0,R*0.85,0,TAU); bgx.fillStyle=bezelIn; bgx.fill();
+    // dial with soft diagonal shade
+    bgx.beginPath(); bgx.arc(0,0,R*0.72,0,TAU);
+    const g=bgx.createLinearGradient(-R*0.6,-R*0.6,R*0.6,R*0.6); g.addColorStop(0,'#fdfdfd'); g.addColorStop(1,'#dfe1e6');
+    bgx.fillStyle=g; bgx.fill(); bgx.lineWidth=R*0.05; bgx.strokeStyle=outline; bgx.stroke();
+    // 12/3/6/9 tick bars
+    bgx.strokeStyle=outline; bgx.lineWidth=R*0.05;
+    for(let k=0;k<4;k++){ const a=k*Math.PI/2-Math.PI/2, r1=R*0.62, r2=R*0.52;
+      bgx.beginPath(); bgx.moveTo(Math.cos(a)*r1,Math.sin(a)*r1); bgx.lineTo(Math.cos(a)*r2,Math.sin(a)*r2); bgx.stroke(); }
+    // chunky hands
+    const m=now.getMinutes()+now.getSeconds()/60, hr=now.getHours()%12+m/60;
+    const hand=(ang,len,wd,col)=>{ bgx.save(); bgx.rotate(ang); bgx.lineWidth=wd; bgx.strokeStyle=col; bgx.beginPath(); bgx.moveTo(0,wd*0.5); bgx.lineTo(0,-len); bgx.stroke(); bgx.restore(); };
+    hand(hr*Math.PI/6, R*0.4, R*0.075, outline);
+    hand(m*Math.PI/30, R*0.58, R*0.058, outline);
+    if(S.secs){ const ms=now.getMilliseconds()/1000, sb=Math.floor(now.getSeconds())+easeOutBack(Math.min(1,ms*4)); hand(sb*Math.PI/30, R*0.6, R*0.02, bezel); }
+    // red hub
+    bgx.beginPath(); bgx.arc(0,0,R*0.075,0,TAU); bgx.fillStyle=bezel; bgx.fill(); bgx.lineWidth=R*0.03; bgx.strokeStyle=outline; bgx.stroke();
+    bgx.restore();
   }
 });
 let synthLastS=-1;
