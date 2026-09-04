@@ -387,6 +387,24 @@ body.secs #layer-seg .seg{ font-size:min(17vw,26vh); }
 #layer-nixie .sub{ font-family:'Fredoka','Poppins',sans-serif; letter-spacing:.34em; text-transform:uppercase; opacity:.8; margin-top:2.2vh;
   color:#ffb85c; text-shadow:0 0 12px #ff6a00; }
 
+/* ================= CALM MOTION (default) =================
+   Kills the harsh/strobing effects: no flicker, no per-tick glitch,
+   no chromatic jitter, softer scanlines, slower ambient drift.        */
+body.calm #layer-neon .time .fl{ animation:none; }
+body.calm #layer-seg .lit{ animation:none; }
+body.calm #layer-nixie .lit{ animation:none; }
+body.calm #layer-synth .glitch.tick{ animation:none; }
+body.calm #layer-synth .glitch::before{ transform:translate(-1px,0); opacity:.55; }
+body.calm #layer-synth .glitch::after{ transform:translate(1px,0); opacity:.55; }
+body.calm #layer-synth .scan{ opacity:.35; }
+body.calm #layer-synth .grid{ animation-duration:4.5s; }
+body.calm #layer-glass .glasscard::before{ animation-duration:18s; }
+body.calm #layer-glass .glasscard::after{ animation-duration:16s; }
+body.calm #layer-bold .d{ transition:transform .5s cubic-bezier(.22,1,.36,1); }
+/* smoother face fade-in on switch */
+.layer.active{ animation:faceIn .45s cubic-bezier(.22,1,.36,1); }
+@keyframes faceIn{ from{ opacity:0; } to{ opacity:1; } }
+
 @media (prefers-reduced-motion: reduce){
   .flip3d.go .flip-top,.flip3d.go .flip-bottom{ animation-duration:.01s; }
   #layer-neon .time .fl,#layer-glass .glasscard::before,#layer-glass .glasscard::after,#layer-synth .grid{ animation:none; }
@@ -509,6 +527,7 @@ body.secs #layer-seg .seg{ font-size:min(17vw,26vh); }
       <div class="row"><div class="lbl">Time format</div><div class="seg-ctrl" id="fmt-ctrl"><button data-fmt="24" class="sel">24h</button><button data-fmt="12">12h</button></div></div>
       <div class="row"><div class="lbl">Show seconds<small>Applies to every face that can show them</small></div><div class="tg" id="tg-secs"></div></div>
       <div class="row"><div class="lbl">Brightness</div><input type="range" min="20" max="100" value="100" class="bright" id="bright" /></div>
+      <div class="row"><div class="lbl">Motion<small>Calm removes flicker, glitch &amp; strobe</small></div><div class="seg-ctrl" id="motion-ctrl"><button data-motion="calm" class="sel">Calm</button><button data-motion="full">Full</button></div></div>
       <div class="row"><div class="lbl">Keep screen awake<small>Wake Lock · re-armed automatically</small></div><div class="tg on" id="tg-wake"></div></div>
       <div class="row"><div class="lbl">Auto night dimming<small>Dims + warms after sunset</small></div><div class="tg on" id="tg-night"></div></div>
       <div class="row"><div class="lbl">Burn-in drift<small>Slowly nudges pixels (OLED safe)</small></div><div class="tg on" id="tg-drift"></div></div>
@@ -549,7 +568,7 @@ const DEFAULTS={
   mic:false, audio:false, weather:false, wfx:true,
   wake:true, night:true, drift:true,
   accent:'#6ad5ff', accent2:'#b892ff', accentAuto:true,
-  bg:'auto', font:'Poppins', numColor:'default', brightness:100
+  bg:'auto', font:'Poppins', numColor:'default', brightness:100, motion:'calm'
 };
 let S=Object.assign({},DEFAULTS);
 try{ const saved=JSON.parse(localStorage.getItem('lumina')||'{}'); Object.assign(S,saved);
@@ -577,6 +596,10 @@ function applyAccent(a,b){
 applyAccent(S.accent,S.accent2);
 
 let activeTheme=null;   // declared early: facePal()/applyBg() run at load and read this (TDZ-safe)
+
+/* motion amplitude: Calm damps every beat-driven jolt to ~1/3 */
+const MO=()=>S.motion==='calm'?0.34:1;
+function applyMotion(){ document.body.classList.toggle('calm', S.motion==='calm'); }
 
 /* ---------- backgrounds ---------- */
 const BG={
@@ -862,8 +885,8 @@ function applyDim(){
 let driftX=0,driftY=0;
 function applyDrift(){
   if(!S.drift){ $('#stage').style.transform=''; return; }
-  const t=state.t*0.04;
-  driftX=Math.sin(t)*10; driftY=Math.cos(t*0.7)*10;
+  const slow=S.motion==='calm'?0.4:1, t=state.t*0.04*slow;   // calm = much slower, shorter travel
+  driftX=Math.sin(t)*10*slow; driftY=Math.cos(t*0.7)*10*slow;
   $('#stage').style.transform=`translate(${driftX}px,${driftY}px)`;
 }
 
@@ -1044,7 +1067,8 @@ function drawSkyBackdrop(){
 let beatRings=[], vizP=[];
 function vzBreathe(){                       // universal soft bass bloom
   const a=state.audio; if(a.level<=0.015) return;
-  const {w,h}=state, cx=state.cx, cy=state.cy, rad=Math.max(w,h)*(0.30+a.bass*0.42), al=0.05+a.bass*0.26;
+  const m=MO(), {w,h}=state, cx=state.cx, cy=state.cy,
+        rad=Math.max(w,h)*(0.30+a.bass*0.42*m), al=0.05+a.bass*0.26*m;
   const g=vizx.createRadialGradient(cx,cy,0,cx,cy,rad);
   g.addColorStop(0,hexA(S.accent,al)); g.addColorStop(1,hexA(S.accent,0));
   vizx.save(); vizx.globalCompositeOperation='lighter'; vizx.fillStyle=g; vizx.fillRect(0,0,w,h); vizx.restore();
@@ -1078,7 +1102,7 @@ function vzRadialBlob(R){                     // liquid morphing outline (hologr
 }
 function vzRings(){                            // shockwaves emitted on beat
   const {w,h}=state, cx=state.cx, cy=state.cy, MAX=Math.min(w,h)*0.6;
-  if(state.audio.beat>0.6) beatRings.push({r:Math.min(w,h)*0.05, life:1});
+  if(state.audio.beat>(S.motion==='calm'?0.85:0.6)) beatRings.push({r:Math.min(w,h)*0.05, life:1});
   vizx.save(); vizx.globalCompositeOperation='lighter';
   for(let i=beatRings.length-1;i>=0;i--){ const b=beatRings[i]; b.life-=0.02; b.r=lerp(b.r,MAX,0.06);
     if(b.life<=0){ beatRings.splice(i,1); continue; }
@@ -1106,7 +1130,8 @@ function vzScopeCircular(R){                     // elegant oscilloscope halo (s
 }
 function vzParticles(fromEdge){                 // beat bursts + level-driven drift
   const {w,h}=state, cx=state.cx, cy=state.cy, a=state.audio;
-  if(a.beat>0.6){ for(let i=0;i<28;i++){ const ang=Math.random()*TAU, sp=(1+Math.random()*3)*(0.6+a.beat)*3.2;
+  const n=S.motion==='calm'?12:28;
+  if(a.beat>(S.motion==='calm'?0.85:0.6)){ for(let i=0;i<n;i++){ const ang=Math.random()*TAU, sp=(1+Math.random()*3)*(0.6+a.beat)*3.2*MO();
     const x=fromEdge?Math.random()*w:cx, y=fromEdge?Math.random()*h:cy;
     vizP.push({x,y,vx:Math.cos(ang)*sp,vy:Math.sin(ang)*sp,life:1,r:1+Math.random()*2.2}); } }
   const gain=0.4+a.level*1.8;
@@ -1320,7 +1345,7 @@ function hexA(hex,a){ const p=parseInt(hex.slice(1),16); return `rgba(${(p>>16)&
 
 /* FACE: NEON / FLIP / SEG / WORD are DOM-driven (canvas draws sky backdrop) */
 registerTheme('bold',{ name:'Bold', desc:'StandBy chunky two-tone', kind:'dom',
-  draw(){ const s=1+state.audio.beat*0.03; $$('#layer-bold .d').forEach(el=>el.style.transform=`scale(${s.toFixed(3)})`); } });
+  draw(){ const s=1+state.audio.beat*0.03*MO(); $$('#layer-bold .d').forEach(el=>el.style.transform=`scale(${s.toFixed(3)})`); } });
 registerTheme('minimal',{ name:'Minimal', desc:'Editorial thin type', kind:'dom' });
 registerTheme('neon',{ name:'Neon', desc:'Glowing tube numerals', kind:'dom',
   draw(){ const g=0.6+state.audio.bass*1.5; if(Math.abs(g-(this._g||0))>0.05){ this._g=g; $('#layer-neon').style.setProperty('--glow',g.toFixed(2)); } }
@@ -1361,7 +1386,7 @@ registerTheme('analog',{ name:'Analog', desc:'Metallic sweep hands', kind:'canva
     hand(m*Math.PI/30, fr*0.72, R*0.02, dark, R*0.10,false);
     hand(s*Math.PI/30, fr*0.82, R*0.008, S.accent, R*0.16,true);
     bgx.beginPath(); bgx.arc(cx,cy,R*0.03,0,TAU); bgx.fillStyle=dark; bgx.fill();
-    bgx.beginPath(); bgx.arc(cx,cy,R*0.013*(1+state.audio.beat*0.6),0,TAU); bgx.fillStyle=S.accent; bgx.fill();
+    bgx.beginPath(); bgx.arc(cx,cy,R*0.013*(1+state.audio.beat*0.6*MO()),0,TAU); bgx.fillStyle=S.accent; bgx.fill();
     bgx.restore();
   }
 });
@@ -1462,7 +1487,7 @@ registerTheme('cartoon',{ name:'Cartoon', desc:'Bouncy sticker clock', kind:'can
     const cx=state.cx, cy=state.cy, R=Math.min(box.w,box.h)*0.42, now=state.now;
     const outline='#1c1c22', bezel=S.accent, bezelIn=lighten(S.accent,26);
     const rock=Math.sin(state.t*1.6)*0.05, beat=state.audio.beat;   // gentle hanging rock + beat squash
-    bgx.save(); bgx.translate(cx,cy); bgx.rotate(rock); bgx.scale(1+beat*0.06, 1-beat*0.04); bgx.lineCap='round';
+    bgx.save(); bgx.translate(cx,cy); bgx.rotate(rock); bgx.scale(1+beat*0.06*MO(), 1-beat*0.04*MO()); bgx.lineCap='round';
     // red bezel + black outline
     bgx.beginPath(); bgx.arc(0,0,R,0,TAU); bgx.fillStyle=bezel; bgx.fill(); bgx.lineWidth=R*0.06; bgx.strokeStyle=outline; bgx.stroke();
     // lighter inner ring
@@ -1557,7 +1582,7 @@ registerTheme('constellation',{ name:'Constellation', desc:'Stars draw the time'
       const a=pts[i]; const ax=ox+a.x*scale, ay=oy+a.y*scale;
       if(i%3===0 && i+1<pts.length){ const b=pts[i+1]; bgx.beginPath(); bgx.moveTo(ax,ay); bgx.lineTo(ox+b.x*scale,oy+b.y*scale); bgx.stroke(); }
       const tw=0.6+0.4*Math.sin(state.t*2+i);
-      bgx.fillStyle=hexA('#eaf0ff',0.85*tw); bgx.beginPath(); bgx.arc(ax,ay,scale*2.4*(1+state.audio.beat*0.5),0,TAU); bgx.fill();
+      bgx.fillStyle=hexA('#eaf0ff',0.85*tw); bgx.beginPath(); bgx.arc(ax,ay,scale*2.4*(1+state.audio.beat*0.5*MO()),0,TAU); bgx.fill();
       bgx.fillStyle=hexA(S.accent,0.4); bgx.beginPath(); bgx.arc(ax,ay,scale*4,0,TAU); bgx.fill();
     }
   }
@@ -1641,7 +1666,7 @@ registerTheme('ember',{ name:'Ember', desc:'Digits of drifting sparks', kind:'ca
       e.vx+=(t.x-e.x)*6*dt; e.vy+=(t.y-e.y)*6*dt - up*dt*e.rand;
       e.vx*=0.9; e.vy*=0.9; e.x+=e.vx*dt*8; e.y+=e.vy*dt*8;
       const flick=0.6+0.4*Math.sin(state.t*8+e.ph)+spark;
-      const r=e.r*(1+state.audio.beat*0.6);
+      const r=e.r*(1+state.audio.beat*0.6*MO());
       const col=mixHex('#ff7a18','#ffd15c',e.rand);
       bgx.fillStyle=hexA(col, clamp(0.5*flick,0,0.95));
       bgx.beginPath(); bgx.arc(e.x,e.y,r,0,TAU); bgx.fill();
@@ -1698,7 +1723,7 @@ function refreshUI(){
   buildThemeGrid(); buildSwatches(); buildDots(); buildBgPills(); buildFontPills();
   setTg('#tg-mic',S.mic); setTg('#tg-audio',S.audio); setTg('#tg-weather',S.weather); setTg('#tg-wfx',S.wfx);
   setTg('#tg-secs',S.secs); setTg('#tg-wake',S.wake); setTg('#tg-night',S.night); setTg('#tg-drift',S.drift);
-  setSeg('#unit-ctrl',S.unit,'unit'); setSeg('#fmt-ctrl',S.fmt,'fmt'); setSeg('#num-ctrl',S.numColor,'num');
+  setSeg('#unit-ctrl',S.unit,'unit'); setSeg('#fmt-ctrl',S.fmt,'fmt'); setSeg('#num-ctrl',S.numColor,'num'); setSeg('#motion-ctrl',S.motion,'motion');
   const cc=$('#customcol'); if(cc) cc.value=S.accent;
   const br=$('#bright'); if(br) br.value=S.brightness||100;
 }
@@ -1736,6 +1761,7 @@ $('#bright').addEventListener('input',e=>{ S.brightness=+e.target.value; applyDi
 /* segmented controls */
 $('#unit-ctrl').addEventListener('click',e=>{ if(e.target.dataset.unit){ S.unit=e.target.dataset.unit; setSeg('#unit-ctrl',S.unit,'unit'); save(); Weather.renderChip(); } });
 $('#fmt-ctrl').addEventListener('click',e=>{ if(e.target.dataset.fmt){ S.fmt=e.target.dataset.fmt; setSeg('#fmt-ctrl',S.fmt,'fmt'); save(); updateDomFaces(); requestAnimationFrame(fitStage); } });
+$('#motion-ctrl').addEventListener('click',e=>{ if(e.target.dataset.motion){ S.motion=e.target.dataset.motion; setSeg('#motion-ctrl',S.motion,'motion'); applyMotion(); save(); } });
 $('#num-ctrl').addEventListener('click',e=>{ if(e.target.dataset.num){ S.numColor=e.target.dataset.num; setSeg('#num-ctrl',S.numColor,'num'); applyNum(); save(); } });
 function lighten(hex,amt){ const p=parseInt(hex.slice(1),16); const r=clamp(((p>>16)&255)+amt,0,255),g=clamp(((p>>8)&255)+amt,0,255),b=clamp((p&255)+amt,0,255); return '#'+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1); }
 $('#customcol').addEventListener('input',e=>{ const c=e.target.value; S.accentAuto=false; applyAccent(c, lighten(c,40)); applyNum(); save(); $$('#swatches .pill').forEach(p=>p.classList.remove('sel')); });
@@ -1799,7 +1825,7 @@ $('#startbtn').addEventListener('click',startExperience);
 function init(){
   resize(); buildWordGrid(); updateSky();
   document.body.classList.toggle('secs',S.secs);
-  applyBg(); applyFont();
+  applyBg(); applyFont(); applyMotion();
   setTheme(S.theme,false);
   refreshUI();
   Weather.renderChip();
