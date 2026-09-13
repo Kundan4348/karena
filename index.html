@@ -619,7 +619,7 @@ const state={
   audio:{level:0, bass:0, mid:0, treble:0, beat:0, active:false},
   weather:null,           // {temp,code,isDay,label,icon,sunrise,sunset}
   sky:{a:'#0b1020', b:'#1a2140', accent:'#6ad5ff', night:false},
-  w:innerWidth, h:innerHeight, dpr:Math.min(devicePixelRatio||1,2),
+  w:innerWidth, h:innerHeight, dpr:Math.min(devicePixelRatio||1,3),
   portrait:innerHeight>=innerWidth,
   t:0
 };
@@ -970,7 +970,7 @@ const wfx=$('#weatherfx'), wfxx=wfx.getContext('2d');
 const viz=$('#viz'), vizx=viz.getContext('2d');
 function resize(){
   state.w=innerWidth; state.h=innerHeight; state.portrait=innerHeight>=innerWidth;
-  state.dpr=Math.min(devicePixelRatio||1,2);
+  state.dpr=Math.min(devicePixelRatio||1,3);   // iPhone Pro is 3x — capping at 2 made every canvas face blurry
   for(const cv of [bg,wfx,viz]){ cv.width=state.w*state.dpr; cv.height=state.h*state.dpr; }
   bgx.setTransform(state.dpr,0,0,state.dpr,0,0);
   wfxx.setTransform(state.dpr,0,0,state.dpr,0,0);
@@ -997,12 +997,14 @@ function fitStage(){
   const layer=document.querySelector('.layer.active'); const stage=$('#stage');
   if(!layer||!stage) return;
   const el=layer.querySelector('.fit'); if(!el) return;
-  el.style.transform='none';
+  const useZoom=('zoom' in el.style);           // zoom re-lays-out at true size -> text stays vector-sharp (transform:scale blurs on iOS)
+  el.style.transform='none'; if(useZoom) el.style.zoom='1';
   const r=el.getBoundingClientRect();
   if(!r.width||!r.height) return;
   const box=state.box||{w:stage.clientWidth,h:stage.clientHeight};
   const availW=box.w*0.98, availH=box.h*0.98;   // box already excludes island + chrome zones
   const scale=Math.max(0.2, Math.min(availW/r.width, availH/r.height, 2.6));
+  if(useZoom){ el.style.zoom=scale.toFixed(3); return; }
   el.style.transformOrigin='center center';
   el.style.transform='scale('+scale.toFixed(3)+')';
 }
@@ -1457,6 +1459,53 @@ function heatLut(){ const k=S.accent+S.accent2; if(fireLutKey===k) return fireLu
   return fireLut; }
 const plumeFire=new Fire(112,112), hearthFire=new Fire(96,48);
 let fireAcc=0;
+/* ---- WebGL flame: domain-warped FBM noise shaped into licking tongues. Falls back to the heat field if WebGL is missing ---- */
+const GLFire=(()=>{
+  try{
+  const cv=document.createElement('canvas'); cv.width=cv.height=256;
+  const gl=cv.getContext('webgl',{premultipliedAlpha:true,preserveDrawingBuffer:true,antialias:false,alpha:true,depth:false,stencil:false});
+  if(!gl) return null;
+  const VS='attribute vec2 p; void main(){ gl_Position=vec4(p,0.,1.); }';
+  const FS=`precision mediump float; uniform float t,lift,multi; uniform vec2 res; uniform vec3 c1,c2,c3;
+  float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+  float noise(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f); return mix(mix(hash(i),hash(i+vec2(1.,0.)),f.x),mix(hash(i+vec2(0.,1.)),hash(i+vec2(1.,1.)),f.x),f.y); }
+  float fbm(vec2 p){ float v=0., a=.5; for(int i=0;i<5;i++){ v+=a*noise(p); p=p*2.03+vec2(1.7,9.2); a*=.5; } return v; }
+  float tongue(float x,float y,float w0,float w1,float warp){ float w=mix(w0,w1,pow(y,.7)); return 1.-smoothstep(w*.3,w,abs(x+warp*y)); }
+  void main(){
+    vec2 uv=gl_FragCoord.xy/res; float x=uv.x*2.-1., y=uv.y;
+    float w=fbm(vec2(x*2.2, y*2.6-t*1.25))*2.-1.;                 // slow large-scale warp (sway)
+    float n=fbm(vec2(x*3.2+w*.7, y*4.6-t*2.7+w*.5));              // fine detail scrolling upward
+    float shape = multi>.5
+      ? max(max(tongue(x+.58,y,.44,.05,w*.3),tongue(x,y,.52,.07,w*.3)),tongue(x-.58,y,.44,.05,w*.3))
+      : tongue(x,y,.80,.08,w*.3);
+    float top=(.58+.30*n)*lift;                                   // ragged, flickering flame top
+    float hm=1.-smoothstep(top*.45,top,y);
+    float n2=fbm(vec2(x*5.5+w*.8, y*3.2-t*3.1));                  // carves the sheet into separate licking tongues
+    float carve=mix(1., smoothstep(.28,.72,n2), clamp(y*1.4,0.,.95));
+    float heat=clamp((shape*hm*carve*(.30+n*.95))*1.25-.16,0.,1.);
+    vec3 col=mix(vec3(0.),c1,smoothstep(0.,.25,heat));
+    col=mix(col,c2,smoothstep(.2,.55,heat));
+    col=mix(col,c3,smoothstep(.5,.85,heat));
+    col=mix(col,vec3(1.,.95,.82),smoothstep(.9,1.,heat));
+    float a=smoothstep(.01,.35,heat)*.92;
+    gl_FragColor=vec4(col*a,a);
+  }`;
+  const sh=(ty,src)=>{ const s=gl.createShader(ty); gl.shaderSource(s,src); gl.compileShader(s); if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)){ console.warn('flame shader:',gl.getShaderInfoLog(s)); return null; } return s; };
+  const vs=sh(gl.VERTEX_SHADER,VS), fs=sh(gl.FRAGMENT_SHADER,FS); if(!vs||!fs) return null;
+  const pr=gl.createProgram(); gl.attachShader(pr,vs); gl.attachShader(pr,fs); gl.linkProgram(pr);
+  if(!gl.getProgramParameter(pr,gl.LINK_STATUS)) return null; gl.useProgram(pr);
+  const buf=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,buf); gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
+  const loc=gl.getAttribLocation(pr,'p'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
+  const U=n=>gl.getUniformLocation(pr,n), u={t:U('t'),lift:U('lift'),multi:U('multi'),res:U('res'),c1:U('c1'),c2:U('c2'),c3:U('c3')};
+  const rgb=hx=>{ const p=parseInt(hx.slice(1),16); return [((p>>16)&255)/255,((p>>8)&255)/255,(p&255)/255]; };
+  function render(w,h,t,lift,multi,cA,cB,cC){
+    if(cv.width!==w||cv.height!==h){ cv.width=w; cv.height=h; } gl.viewport(0,0,w,h);
+    gl.uniform1f(u.t,t); gl.uniform1f(u.lift,lift); gl.uniform1f(u.multi,multi); gl.uniform2f(u.res,w,h);
+    gl.uniform3fv(u.c1,rgb(cA)); gl.uniform3fv(u.c2,rgb(cB)); gl.uniform3fv(u.c3,rgb(cC));
+    gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT); gl.drawArrays(gl.TRIANGLES,0,3); return cv; }
+  return {render};
+  }catch(e){ return null; }
+})();
 function speckleTex(){ if(speckle) return speckle; const c=document.createElement('canvas'); c.width=c.height=160; const x=c.getContext('2d');
   x.fillStyle='#1c1c20'; x.fillRect(0,0,160,160);
   for(let i=0;i<1400;i++){ const v=Math.random(); x.fillStyle=v<0.5?`rgba(255,255,255,${0.03+Math.random()*0.09})`:`rgba(0,0,0,${0.15+Math.random()*0.35})`;
@@ -1528,15 +1577,22 @@ function drawHearth(dt){
   drawLog(cx0+gw*0.17,cy0-lh*0.5,gw*0.38,lh*0.8,0.08,fl*0.6);
   drawLog(cx0-gw*0.02,cy0-lh*1.15,gw*0.46,lh*0.9,0.20,fl);
   fireAcc+=Math.min(0.05,(dt||0.016)/Math.max(0.2,mo))*(0.55+0.45*mo)*60; const steps=Math.min(3,Math.floor(fireAcc)); fireAcc-=steps; const lut=heatLut();   // fixed-rate sim (calm motion = slower, never off)
-  for(let s=0;s<steps;s++) hearthFire.step(
-    (x)=>{ const u=(x/(hearthFire.w-1)-0.5)*2; const g=Math.exp(-((u+0.42)**2)*22)*0.8+Math.exp(-((u-0.02)**2)*16)+Math.exp(-((u-0.46)**2)*22)*0.85;
-      return Math.min(1.1, g*(0.65+0.35*Math.abs(Math.sin(t*5.3+x*0.6)*Math.sin(t*3.1-x*0.23))+Math.random()*0.15)*fl); },
-    (y)=>Math.sin(t*1.7+y*0.18)*0.12+Math.sin(t*3.4+y*0.4)*0.06,
-    (y)=>0.945+0.04*(y/hearthFire.h));
+  const ft=state.t*(0.45+0.55*mo), ember=mixHex(A2,'#3a0400',0.55), hfw=gw*0.86, hfh=gh*0.70;
   bgx.globalCompositeOperation='lighter'; bgx.imageSmoothingEnabled=true;
-  const hf=hearthFire.render(lut), hfw=gw*0.86, hfh=gh*0.66;
-  bgx.globalAlpha=0.95; bgx.drawImage(hf,cx0-hfw/2,cy0+lh*0.25-hfh,hfw,hfh);
-  bgx.globalAlpha=0.35; bgx.drawImage(hf,cx0-hfw*0.56,cy0+lh*0.3-hfh*1.1,hfw*1.12,hfh*1.1); bgx.globalAlpha=1;
+  if(GLFire){
+    const hf=GLFire.render(384,160,ft,0.72+Math.min(0.2,state.audio.bass*0.3),1,ember,A2,A1);
+    bgx.globalAlpha=0.9; bgx.drawImage(hf,cx0-hfw/2,cy0+lh*0.3-hfh,hfw,hfh);
+    bgx.globalAlpha=0.22; bgx.drawImage(hf,cx0-hfw*0.56,cy0+lh*0.35-hfh*1.1,hfw*1.12,hfh*1.1); bgx.globalAlpha=1;
+  } else {
+    for(let s=0;s<steps;s++) hearthFire.step(
+      (x)=>{ const u=(x/(hearthFire.w-1)-0.5)*2; const g=Math.exp(-((u+0.42)**2)*22)*0.8+Math.exp(-((u-0.02)**2)*16)+Math.exp(-((u-0.46)**2)*22)*0.85;
+        return Math.min(1.1, g*(0.65+0.35*Math.abs(Math.sin(t*5.3+x*0.6)*Math.sin(t*3.1-x*0.23))+Math.random()*0.15)*fl); },
+      (y)=>Math.sin(t*1.7+y*0.18)*0.12+Math.sin(t*3.4+y*0.4)*0.06,
+      (y)=>0.945+0.04*(y/hearthFire.h));
+    const hf=hearthFire.render(lut);
+    bgx.globalAlpha=0.95; bgx.drawImage(hf,cx0-hfw/2,cy0+lh*0.25-hfh,hfw,hfh);
+    bgx.globalAlpha=0.35; bgx.drawImage(hf,cx0-hfw*0.56,cy0+lh*0.3-hfh*1.1,hfw*1.12,hfh*1.1); bgx.globalAlpha=1;
+  }
   bgx.globalCompositeOperation='source-over';
   drawLog(cx0-gw*0.26,cy0+lh*0.1,gw*0.3,lh*0.95,0.03,fl*0.8);
   drawLog(cx0+gw*0.24,cy0+lh*0.12,gw*0.34,lh,-0.05,fl*0.8);
@@ -1562,18 +1618,24 @@ function drawHearth(dt){
   bgx.font=`italic 500 ${W*0.018}px Poppins,sans-serif`; bgx.textAlign='left'; bgx.textBaseline='middle'; bgx.fillStyle='rgba(255,255,255,.22)'; bgx.fillText('Lumina',x0+W*0.03,y0+H*0.905);
   // ---------- flame-mist rising from the top slot (simulated) ----------
   const lift=(1+Math.min(0.5,state.audio.bass*0.6));
-  const ph=Math.min(W*0.78,(slotY-topLimit)-W*0.02), pw=Math.min(slotW*1.25,ph*1.9); // plume box fits the headroom, aspect kept
-  for(let s=0;s<steps;s++) plumeFire.step(
-    (x)=>{ const u=(x/(plumeFire.w-1)-0.5)*2; const base=Math.exp(-u*u*3.4);
-      const flick=0.62+0.38*Math.abs(Math.sin(t*4.7+x*0.35)*Math.sin(t*2.9-x*0.17))+Math.random()*0.18;
-      const gaps=0.7+0.3*Math.sin(t*2.1+x*0.42)*Math.sin(t*0.9+x*0.11);
-      return Math.min(1.15, base*flick*gaps*lift*(0.9+0.1*Math.sin(t*13.3+x))); },
-    (y)=>Math.sin(t*1.15+(y/plumeFire.h)*4.2)*0.11+Math.sin(t*2.6+(y/plumeFire.h)*9.7)*0.05+Math.sin(t*0.5)*0.04,
-    (y)=>0.981+0.012*(y/plumeFire.h));
-  const pf=plumeFire.render(lut);
+  const ph=Math.min(W*0.95,(slotY-topLimit)-W*0.02), pw=Math.min(slotW*1.3,ph*1.6);  // plume box fits the headroom
   bgx.save(); bgx.globalCompositeOperation=light?'source-over':'lighter'; bgx.imageSmoothingEnabled=true;
-  bgx.globalAlpha=0.3; bgx.drawImage(pf,slotX-pw*0.62,slotY+W*0.02-ph*1.12,pw*1.24,ph*1.12);   // soft bloom
-  bgx.globalAlpha=0.95; bgx.drawImage(pf,slotX-pw/2,slotY+W*0.015-ph,pw,ph);                // the plume
+  if(GLFire){
+    const pf=GLFire.render(320,Math.round(320*ph/pw),ft*0.9,(land?1.25:0.92)*Math.min(1.15,lift),0,ember,A2,A1);   // short landscape headroom -> let the flame fill its box
+    bgx.globalAlpha=0.18; bgx.drawImage(pf,slotX-pw*0.6,slotY+W*0.02-ph*1.1,pw*1.2,ph*1.1);   // soft bloom
+    bgx.globalAlpha=0.95; bgx.drawImage(pf,slotX-pw/2,slotY+W*0.012-ph,pw,ph);               // the plume
+  } else {
+    for(let s=0;s<steps;s++) plumeFire.step(
+      (x)=>{ const u=(x/(plumeFire.w-1)-0.5)*2; const base=Math.exp(-u*u*3.4);
+        const flick=0.62+0.38*Math.abs(Math.sin(t*4.7+x*0.35)*Math.sin(t*2.9-x*0.17))+Math.random()*0.18;
+        const gaps=0.7+0.3*Math.sin(t*2.1+x*0.42)*Math.sin(t*0.9+x*0.11);
+        return Math.min(1.15, base*flick*gaps*lift*(0.9+0.1*Math.sin(t*13.3+x))); },
+      (y)=>Math.sin(t*1.15+(y/plumeFire.h)*4.2)*0.11+Math.sin(t*2.6+(y/plumeFire.h)*9.7)*0.05+Math.sin(t*0.5)*0.04,
+      (y)=>0.981+0.012*(y/plumeFire.h));
+    const pf=plumeFire.render(lut);
+    bgx.globalAlpha=0.3; bgx.drawImage(pf,slotX-pw*0.62,slotY+W*0.02-ph*1.12,pw*1.24,ph*1.12);
+    bgx.globalAlpha=0.95; bgx.drawImage(pf,slotX-pw/2,slotY+W*0.015-ph,pw,ph);
+  }
   bgx.globalAlpha=1;
   bgx.restore();
 }

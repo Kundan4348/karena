@@ -1,5 +1,5 @@
 /* Lumina Clock service worker — offline app shell */
-const CACHE = 'lumina-v22';
+const CACHE = 'lumina-v23';
 const ASSETS = [
   './',
   './index.html',
