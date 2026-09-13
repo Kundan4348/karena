@@ -107,6 +107,32 @@ body.secs #layer-bold .d.secs-only{ display:inline-block; }
 body.secs #layer-bold .bd{ font-size:min(22vw,30vh); }
 @media (orientation:landscape){ body.secs #layer-bold .bd{ font-size:min(15vw,42vh);} }
 
+/* ================= CALM (Serene / Haze) — soothing Bold + diffuser glow ================= */
+.calm-wrap{ display:flex; align-items:center; justify-content:center; }
+.calm-in{ display:flex; align-items:center; justify-content:center; animation:calmBreath 7s ease-in-out infinite; will-change:transform; }
+.calm-wrap .bd{ font-family:'Fredoka','Poppins',sans-serif; font-weight:600; line-height:.8; font-size:min(32vw,42vh); }
+@media (orientation:landscape){ .calm-wrap .bd{ font-size:min(24vw,60vh);} }
+.calm-wrap .d{ letter-spacing:-0.02em; position:relative; opacity:.94; }
+.calm-wrap [data-bd="0"],.calm-wrap [data-bd="3"],.calm-wrap [data-bd="5"]{ color:var(--accent);
+  text-shadow:0 0 min(5vw,5vh) color-mix(in srgb,var(--accent) 40%,transparent); }
+.calm-wrap [data-bd="1"],.calm-wrap [data-bd="2"],.calm-wrap [data-bd="4"]{ color:var(--accent2);
+  text-shadow:0 0 min(5vw,5vh) color-mix(in srgb,var(--accent2) 40%,transparent); }
+.calm-wrap [data-bd="0"],.calm-wrap [data-bd="2"],.calm-wrap [data-bd="4"]{ margin-right:-0.08em; z-index:2; }
+.calm-wrap .colon{ display:flex; flex-direction:column; justify-content:center; gap:min(3vw,3.6vh); margin:0 min(1.6vw,1.6vh); z-index:5; }
+.calm-wrap .colon i{ width:min(5.2vw,7vh); height:min(5.2vw,7vh); border-radius:50%; background:rgba(255,255,255,.82);
+  box-shadow:0 0 min(4vw,4vh) rgba(255,255,255,.35); animation:calmDot 4s ease-in-out infinite; }
+.calm-wrap .colon i:nth-child(2){ animation-delay:2s; }
+.calm-wrap .secs-only{ display:none; }
+body.secs .calm-wrap .colon.secs-only{ display:flex; }
+body.secs .calm-wrap .d.secs-only{ display:inline-block; }
+body.secs .calm-wrap .bd{ font-size:min(21vw,29vh); }
+@media (orientation:landscape){ body.secs .calm-wrap .bd{ font-size:min(14.5vw,40vh);} }
+@keyframes calmBreath{ 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.025); } }
+@keyframes calmDot{ 0%,100%{ opacity:.5; } 50%{ opacity:1; } }
+body.light .calm-wrap .colon i{ background:rgba(40,40,60,.7); box-shadow:none; }
+body.light .calm-wrap .d{ text-shadow:none; opacity:1; }
+@media (prefers-reduced-motion:reduce){ .calm-in,.calm-wrap .colon i{ animation:none; } }
+
 /* ================= NEON (multi-layer glow + flicker + reflection) ================= */
 #layer-neon{ background:transparent; }
 #layer-neon .neon-wrap{ position:relative; display:flex; flex-direction:column; align-items:center; }
@@ -432,6 +458,17 @@ body.calm #layer-bold .d{ transition:transform .5s cubic-bezier(.22,1,.36,1); }
       <span class="bd d secs-only" data-bd="4">0</span><span class="bd d secs-only" data-bd="5">0</span>
     </div></div>
 
+    <!-- Serene (soothing Bold, cool dusk diffuser) -->
+    <div class="layer" id="layer-serene"><div class="calm-wrap fit"><div class="calm-in">
+      <span class="bd d" data-bd="0">0</span><span class="bd d" data-bd="1">0</span>
+      <span class="bd colon"><i></i><i></i></span>
+      <span class="bd d" data-bd="2">0</span><span class="bd d" data-bd="3">0</span>
+      <span class="bd colon secs-only"><i></i><i></i></span>
+      <span class="bd d secs-only" data-bd="4">0</span><span class="bd d secs-only" data-bd="5">0</span>
+    </div></div></div>
+
+    <!-- Hearth is a canvas face (flame diffuser scene) — no DOM layer -->
+
     <!-- Neon -->
     <div class="layer" id="layer-neon"><div class="neon-wrap fit">
       <div class="time ntime">00:00</div>
@@ -619,6 +656,8 @@ const BG={
 const PALETTES={
   aurora:{bg:{type:'grad',a:'#0F2027',b:'#2C5364'},accent:'#6ad5ff',accent2:'#b892ff'},
   bold:{bg:{type:'solid',c:'#000000'},accent:'#2f6fe0',accent2:'#6db3ff'},
+  serene:{bg:{type:'grad',a:'#0e1626',b:'#050810'},accent:'#a3b9ff',accent2:'#b7efe3'},
+  hearth:{bg:{type:'grad',a:'#140708',b:'#020102'},accent:'#ffb347',accent2:'#ff6a2a'},
   minimal:{bg:{type:'solid',c:'#0a0a0c'},accent:'#e8e8ee',accent2:'#ff4d00'},
   nixie:{bg:{type:'grad',a:'#2a1405',b:'#0a0402'},accent:'#ff7a18',accent2:'#ffd15c'},
   binary:{bg:{type:'solid',c:'#03060a'},accent:'#39ff14',accent2:'#00e5ff'},
@@ -1175,12 +1214,13 @@ function updateDomFaces(){
   if(activeTheme){ if(activeTheme.id==='flip') updateFlip(T);
     else if(activeTheme.id==='word') updateWord();
     else if(activeTheme.id==='neon') updateNeon(T);
-    else if(activeTheme.id==='bold') updateBold(T); }
+    else if(activeTheme.id==='bold') updateBold(T,'#layer-bold');
+    else if(activeTheme.id==='serene') updateBold(T,'#layer-serene'); }
 }
-function updateBold(T){
+function updateBold(T,sel){
   let hh=T.h; if(S.fmt==='12') hh=hh%12||12;
   const s=String(hh).padStart(2,'0')+String(T.m).padStart(2,'0')+String(T.s).padStart(2,'0');
-  $$('#layer-bold [data-bd]').forEach((el,i)=>{ if(el.textContent!==s[i]) el.textContent=s[i]; });
+  $$((sel||'#layer-bold')+' [data-bd]').forEach((el,i)=>{ if(el.textContent!==s[i]) el.textContent=s[i]; });
 }
 /* ---- Neon: wrap colon in a flickering span, drive --glow ---- */
 function updateNeon(T){
@@ -1347,6 +1387,198 @@ function hexA(hex,a){ const p=parseInt(hex.slice(1),16); return `rgba(${(p>>16)&
 registerTheme('bold',{ name:'Bold', desc:'StandBy chunky two-tone', kind:'dom',
   draw(){ const s=1+state.audio.beat*0.03*MO(); $$('#layer-bold .d').forEach(el=>el.style.transform=`scale(${s.toFixed(3)})`); } });
 registerTheme('minimal',{ name:'Minimal', desc:'Editorial thin type', kind:'dom' });
+/* ---- Calm faces: Bold silhouette, soothing colors, diffuser-light backdrop ---- */
+function mixHex(a,b,t){ const pa=parseInt(a.slice(1),16), pb=parseInt(b.slice(1),16);
+  const ch=(s)=>Math.round(((pa>>s)&255)*(1-t)+((pb>>s)&255)*t);
+  return '#'+[16,8,0].map(s=>ch(s).toString(16).padStart(2,'0')).join(''); }
+const DIFFUSER=[ // slow drifting orbs: x/y orbit radii, speed (rad/s), phase, base size
+  {ox:0.28,oy:0.22,sp:0.05,ph:0.0,sz:0.62},
+  {ox:0.30,oy:0.26,sp:0.037,ph:2.1,sz:0.55},
+  {ox:0.22,oy:0.30,sp:0.061,ph:4.2,sz:0.48},
+  {ox:0.34,oy:0.18,sp:0.029,ph:1.3,sz:0.42} ];
+let mist=[];
+function drawDiffuser(){
+  const {w,h}=state, t=state.t*MO(), light=isLight();
+  paintBase(bgx);
+  const cols=[S.accent,S.accent2,mixHex(S.accent,S.accent2,0.5),mixHex(S.accent2,S.accent,0.25)];
+  const breath=0.5+0.5*Math.sin(t*(TAU/7));                 // ~7s calm breathing cycle
+  const lift=Math.min(0.25,state.audio.level*0.25);          // music only nudges softly
+  const R=Math.min(w,h);
+  bgx.save(); bgx.globalCompositeOperation=light?'source-over':'lighter';
+  DIFFUSER.forEach((o,i)=>{
+    const x=w*0.5+Math.cos(t*o.sp+o.ph)*w*o.ox, y=h*0.5+Math.sin(t*o.sp*1.3+o.ph)*h*o.oy;
+    const r=R*o.sz*(0.9+breath*0.18+lift);
+    const g=bgx.createRadialGradient(x,y,0,x,y,r);
+    const a=(light?0.22:0.30)*(0.85+breath*0.3);
+    g.addColorStop(0,hexA(cols[i],a)); g.addColorStop(0.55,hexA(cols[i],a*0.35)); g.addColorStop(1,hexA(cols[i],0));
+    bgx.fillStyle=g; bgx.beginPath(); bgx.arc(x,y,r,0,TAU); bgx.fill();
+  });
+  bgx.restore();
+}
+/* ---- Hearth: flame-diffuser — warm mist plume lit from below, like an aroma "fireplace" diffuser ---- */
+let flames=[], flameSprites=null, flameKey='';
+function flameSprite(color){ const c=document.createElement('canvas'); c.width=c.height=128; const x=c.getContext('2d');
+  const g=x.createRadialGradient(64,64,0,64,64,64); g.addColorStop(0,hexA(color,1)); g.addColorStop(0.35,hexA(color,0.55)); g.addColorStop(1,hexA(color,0));
+  x.fillStyle=g; x.fillRect(0,0,128,128); return c; }
+function ensureFlameSprites(){ const k=S.accent+S.accent2; if(flameKey===k) return; flameKey=k;
+  flameSprites=[ flameSprite(mixHex(S.accent,'#ffffff',0.28)), flameSprite(S.accent), flameSprite(S.accent2), flameSprite(mixHex(S.accent2,'#b3160a',0.55)) ]; }
+let flameAcc=0, speckle=null, sparks=[];
+/* ---- Procedural fire: heat field advected upward with turbulence + cooling, drawn through a heat palette ---- */
+class Fire{
+  constructor(w,h){ this.w=w; this.h=h; this.a=new Float32Array(w*h); this.b=new Float32Array(w*h);
+    this.cv=document.createElement('canvas'); this.cv.width=w; this.cv.height=h; this.cx=this.cv.getContext('2d'); this.img=this.cx.createImageData(w,h); }
+  step(src,wind,cool){
+    const {w,h}=this, a=this.a, b=this.b;
+    for(let x=0;x<w;x++){ const v=src(x); a[(h-1)*w+x]=v; a[(h-2)*w+x]=Math.max(a[(h-2)*w+x]*0.6,v*0.92); }
+    for(let y=0;y<h-2;y++){
+      const off=wind(y), fo=Math.floor(off), fr=off-fo, c=cool(y), r1=(y+1)*w, r2=(y+2)*w;
+      for(let x=0;x<w;x++){
+        let x0=x-fo, x1=x0-1; x0=x0<0?0:x0>=w?w-1:x0; x1=x1<0?0:x1>=w?w-1:x1;
+        const s0=(a[r1+(x0?x0-1:0)]+a[r1+x0]*2+a[r1+(x0<w-1?x0+1:x0)]+a[r2+x0])*0.2;
+        const s1=(a[r1+(x1?x1-1:0)]+a[r1+x1]*2+a[r1+(x1<w-1?x1+1:x1)]+a[r2+x1])*0.2;
+        const v=(s0*(1-fr)+s1*fr)*c-Math.random()*0.02;
+        b[y*w+x]=v>0?v:0;
+      }
+    }
+    a.set(b.subarray(0,(h-2)*w));
+  }
+  render(lut){ const d=this.img.data, a=this.a, n=a.length;
+    for(let i=0;i<n;i++){ const v=a[i]; const o=(v>=1?255:(v*255)|0)<<2, p=i<<2; d[p]=lut[o]; d[p+1]=lut[o+1]; d[p+2]=lut[o+2]; d[p+3]=lut[o+3]; }
+    this.cx.putImageData(this.img,0,0); return this.cv; }
+}
+let fireLut=null, fireLutKey='';
+function heatLut(){ const k=S.accent+S.accent2; if(fireLutKey===k) return fireLut; fireLutKey=k;
+  const A1=S.accent, A2=S.accent2, rgb=(hx)=>{const p=parseInt(hx.slice(1),16); return [(p>>16)&255,(p>>8)&255,p&255];};
+  const stops=[[0,[0,0,0],0],[0.10,rgb(mixHex(A2,'#3a0400',0.7)),0.18],[0.30,rgb(A2),0.62],[0.58,rgb(A1),0.88],[0.82,rgb(mixHex(A1,'#ffffff',0.45)),0.95],[1,rgb(mixHex(A1,'#ffffff',0.8)),1]];
+  fireLut=new Uint8ClampedArray(256*4);
+  for(let i=0;i<256;i++){ const t=i/255; let j=0; while(j<stops.length-2&&t>stops[j+1][0]) j++;
+    const [t0,c0,a0]=stops[j], [t1,c1,a1]=stops[j+1], u=(t-t0)/(t1-t0);
+    fireLut[i*4]=c0[0]+(c1[0]-c0[0])*u; fireLut[i*4+1]=c0[1]+(c1[1]-c0[1])*u; fireLut[i*4+2]=c0[2]+(c1[2]-c0[2])*u; fireLut[i*4+3]=(a0+(a1-a0)*u)*255; }
+  return fireLut; }
+const plumeFire=new Fire(112,112), hearthFire=new Fire(96,48);
+let fireAcc=0;
+function speckleTex(){ if(speckle) return speckle; const c=document.createElement('canvas'); c.width=c.height=160; const x=c.getContext('2d');
+  x.fillStyle='#1c1c20'; x.fillRect(0,0,160,160);
+  for(let i=0;i<1400;i++){ const v=Math.random(); x.fillStyle=v<0.5?`rgba(255,255,255,${0.03+Math.random()*0.09})`:`rgba(0,0,0,${0.15+Math.random()*0.35})`;
+    x.fillRect(Math.random()*160,Math.random()*160,1+Math.random()*1.5,1+Math.random()*1.5); }
+  speckle=bgx.createPattern(c,'repeat'); return speckle; }
+function rrect(x,y,w,h,r){ bgx.beginPath(); bgx.moveTo(x+r,y); bgx.arcTo(x+w,y,x+w,y+h,r); bgx.arcTo(x+w,y+h,x,y+h,r); bgx.arcTo(x,y+h,x,y,r); bgx.arcTo(x,y,x+w,y,r); bgx.closePath(); }
+function drawLog(x,y,len,th,ang,glow){
+  bgx.save(); bgx.translate(x,y); bgx.rotate(ang);
+  const g=bgx.createLinearGradient(0,-th/2,0,th/2); g.addColorStop(0,'#4a2c1a'); g.addColorStop(0.45,'#2e1a0f'); g.addColorStop(1,'#140905');
+  rrect(-len/2,-th/2,len,th,th/2); bgx.fillStyle=g; bgx.fill();
+  bgx.strokeStyle='rgba(0,0,0,.55)'; bgx.lineWidth=Math.max(1,th*0.06); bgx.stroke();
+  bgx.strokeStyle='rgba(0,0,0,.35)'; bgx.lineWidth=Math.max(1,th*0.05);            // bark grain
+  for(let i=0;i<4;i++){ const yy=-th*0.32+i*th*0.21; bgx.beginPath(); bgx.moveTo(-len*0.42,yy); bgx.bezierCurveTo(-len*0.1,yy+th*0.08,len*0.15,yy-th*0.08,len*0.42,yy); bgx.stroke(); }
+  // glowing cracks lit from the embers below
+  bgx.strokeStyle=hexA(S.accent2,0.35+glow*0.45); bgx.lineWidth=Math.max(1,th*0.05);
+  bgx.beginPath(); bgx.moveTo(-len*0.3,th*0.1); bgx.lineTo(-len*0.12,th*0.32); bgx.moveTo(len*0.05,th*0.05); bgx.lineTo(len*0.3,th*0.3); bgx.stroke();
+  // cut end with growth rings
+  bgx.beginPath(); bgx.ellipse(len/2-th*0.1,0,th*0.28,th/2,0,0,TAU); bgx.fillStyle='#6a4a30'; bgx.fill();
+  bgx.strokeStyle='rgba(60,35,18,.9)'; bgx.lineWidth=1; for(let r=0.2;r<1;r+=0.25){ bgx.beginPath(); bgx.ellipse(len/2-th*0.1,0,th*0.28*r,th/2*r,0,0,TAU); bgx.stroke(); }
+  bgx.restore();
+}
+function drawHearth(dt){
+  const {w,h}=state, box=state.box||{x:0,y:0,w,h}, light=isLight(), mo=MO(); dt=Math.min(0.05,dt||0.016)*mo;
+  paintBase(bgx); ensureFlameSprites();
+  const A1=S.accent, A2=S.accent2, t=state.t;
+  const fl=0.85+0.15*Math.sin(t*9.1)+0.08*Math.sin(t*23.7)+Math.min(0.3,state.audio.bass*0.4);   // ember flicker
+  // ---------- device geometry (front face + top + right side, light perspective) ----------
+  const land=box.w>box.h, W=Math.min(box.w*(land?0.90:0.94), box.h*(land?2.3:1.25)), H=W*(land?0.27:0.31), dx=W*0.07, dy=-W*0.045;
+  // landscape: device fills the safe width and sits on the safe-box floor (above date/dots); the plume may rise into the
+  // centred top strip (corner chips stay clear). portrait: island-safe top is respected via box.y
+  const topLimit=land?Math.max(state.h*0.03, box.y*0.35):box.y;
+  const x0=box.x+box.w/2-W/2-dx/2, y0=land?box.y+box.h-H:box.y+box.h*0.60-H/2, r=W*0.012;
+  const slotW=W*0.56, slotX=x0+dx*0.5+W*0.5, slotY=y0+dy*0.5;
+  // floor shadow + warm spill on the "table"
+  bgx.save(); let g=bgx.createRadialGradient(x0+W/2,y0+H*1.02,0,x0+W/2,y0+H*1.02,W*0.7);
+  g.addColorStop(0,'rgba(0,0,0,.55)'); g.addColorStop(1,'rgba(0,0,0,0)'); bgx.fillStyle=g; bgx.beginPath(); bgx.ellipse(x0+W/2+dx/2,y0+H*1.02,W*0.7,H*0.28,0,0,TAU); bgx.fill();
+  bgx.globalCompositeOperation=light?'source-over':'lighter'; g=bgx.createRadialGradient(x0+W/2,y0+H*0.7,0,x0+W/2,y0+H*0.7,W*0.75);
+  g.addColorStop(0,hexA(A2,0.16*fl)); g.addColorStop(1,hexA(A2,0)); bgx.fillStyle=g; bgx.fillRect(0,0,w,h); bgx.restore();
+  // top face
+  bgx.fillStyle=speckleTex(); bgx.beginPath(); bgx.moveTo(x0,y0); bgx.lineTo(x0+dx,y0+dy); bgx.lineTo(x0+W+dx,y0+dy); bgx.lineTo(x0+W,y0); bgx.closePath(); bgx.fill();
+  bgx.fillStyle='rgba(255,255,255,.05)'; bgx.fill();
+  // right side face
+  bgx.fillStyle=speckleTex(); bgx.beginPath(); bgx.moveTo(x0+W,y0); bgx.lineTo(x0+W+dx,y0+dy); bgx.lineTo(x0+W+dx,y0+dy+H); bgx.lineTo(x0+W,y0+H); bgx.closePath(); bgx.fill();
+  bgx.fillStyle='rgba(0,0,0,.45)'; bgx.fill();
+  // front face
+  rrect(x0,y0,W,H,r); bgx.fillStyle=speckleTex(); bgx.fill();
+  g=bgx.createLinearGradient(x0,y0,x0,y0+H); g.addColorStop(0,'rgba(255,255,255,.05)'); g.addColorStop(1,'rgba(0,0,0,.25)'); bgx.fillStyle=g; bgx.fill();
+  bgx.strokeStyle='rgba(255,255,255,.07)'; bgx.lineWidth=1; bgx.stroke();
+  // top slot (where the mist/flame exits) with warm inner glow
+  bgx.save(); bgx.translate(slotX,slotY); bgx.transform(1,0,dx/W*0.9,1,0,0);
+  rrect(-slotW/2,-W*0.012,slotW,W*0.024,W*0.012); bgx.fillStyle='#060404'; bgx.fill();
+  bgx.restore();
+  bgx.save(); bgx.globalCompositeOperation=light?'source-over':'lighter'; g=bgx.createRadialGradient(slotX,slotY,0,slotX,slotY,slotW*0.55);
+  g.addColorStop(0,hexA(A2,0.55*fl)); g.addColorStop(0.5,hexA(A2,0.12*fl)); g.addColorStop(1,hexA(A2,0)); bgx.fillStyle=g;
+  bgx.beginPath(); bgx.ellipse(slotX,slotY,slotW*0.6,W*0.05,0,0,TAU); bgx.fill(); bgx.restore();
+  // ---------- glass window ----------
+  const gm=W*0.032, gx=x0+gm, gy=y0+H*0.10, gw=W-gm*2, gh=H*0.70;
+  bgx.save(); rrect(gx,gy,gw,gh,W*0.008); bgx.clip();
+  g=bgx.createLinearGradient(0,gy,0,gy+gh); g.addColorStop(0,'#0c0503'); g.addColorStop(0.6,'#1a0906'); g.addColorStop(1,'#050201'); bgx.fillStyle=g; bgx.fillRect(gx,gy,gw,gh);
+  // back-wall ember light
+  bgx.globalCompositeOperation='lighter'; g=bgx.createRadialGradient(gx+gw/2,gy+gh*0.92,0,gx+gw/2,gy+gh*0.92,gw*0.45);
+  g.addColorStop(0,hexA(A2,0.55*fl)); g.addColorStop(0.5,hexA(A2,0.18*fl)); g.addColorStop(1,hexA(A2,0)); bgx.fillStyle=g; bgx.fillRect(gx,gy,gw,gh);
+  bgx.globalCompositeOperation='source-over';
+  // ember bed
+  g=bgx.createLinearGradient(0,gy+gh*0.86,0,gy+gh); g.addColorStop(0,hexA(A2,0)); g.addColorStop(1,hexA(mixHex(A2,'#000000',0.4),0.9)); bgx.fillStyle=g; bgx.fillRect(gx,gy+gh*0.82,gw,gh*0.18);
+  // logs (back row), fire between them, then the front logs
+  const lh=gh*0.19, cy0=gy+gh*0.78, cx0=gx+gw/2;
+  drawLog(cx0-gw*0.16,cy0-lh*0.55,gw*0.42,lh*0.85,-0.06,fl*0.6);
+  drawLog(cx0+gw*0.17,cy0-lh*0.5,gw*0.38,lh*0.8,0.08,fl*0.6);
+  drawLog(cx0-gw*0.02,cy0-lh*1.15,gw*0.46,lh*0.9,0.20,fl);
+  fireAcc+=Math.min(0.05,(dt||0.016)/Math.max(0.2,mo))*(0.55+0.45*mo)*60; const steps=Math.min(3,Math.floor(fireAcc)); fireAcc-=steps; const lut=heatLut();   // fixed-rate sim (calm motion = slower, never off)
+  for(let s=0;s<steps;s++) hearthFire.step(
+    (x)=>{ const u=(x/(hearthFire.w-1)-0.5)*2; const g=Math.exp(-((u+0.42)**2)*22)*0.8+Math.exp(-((u-0.02)**2)*16)+Math.exp(-((u-0.46)**2)*22)*0.85;
+      return Math.min(1.1, g*(0.65+0.35*Math.abs(Math.sin(t*5.3+x*0.6)*Math.sin(t*3.1-x*0.23))+Math.random()*0.15)*fl); },
+    (y)=>Math.sin(t*1.7+y*0.18)*0.12+Math.sin(t*3.4+y*0.4)*0.06,
+    (y)=>0.945+0.04*(y/hearthFire.h));
+  bgx.globalCompositeOperation='lighter'; bgx.imageSmoothingEnabled=true;
+  const hf=hearthFire.render(lut), hfw=gw*0.86, hfh=gh*0.66;
+  bgx.globalAlpha=0.95; bgx.drawImage(hf,cx0-hfw/2,cy0+lh*0.25-hfh,hfw,hfh);
+  bgx.globalAlpha=0.35; bgx.drawImage(hf,cx0-hfw*0.56,cy0+lh*0.3-hfh*1.1,hfw*1.12,hfh*1.1); bgx.globalAlpha=1;
+  bgx.globalCompositeOperation='source-over';
+  drawLog(cx0-gw*0.26,cy0+lh*0.1,gw*0.3,lh*0.95,0.03,fl*0.8);
+  drawLog(cx0+gw*0.24,cy0+lh*0.12,gw*0.34,lh,-0.05,fl*0.8);
+  bgx.globalCompositeOperation='lighter';
+  if(mo>0 && sparks.length<18 && Math.random()<0.25) sparks.push({x:cx0+(Math.random()-0.5)*gw*0.6,y:cy0-lh*0.6,vx:(Math.random()-0.5)*gw*0.05,vy:-gh*(0.25+Math.random()*0.3),life:0,dur:1+Math.random()*1.2});
+  for(let i=sparks.length-1;i>=0;i--){ const s=sparks[i]; s.life+=dt; const k=s.life/s.dur; if(k>=1){ sparks.splice(i,1); continue; }
+    s.x+=s.vx*dt; s.y+=s.vy*dt; bgx.fillStyle=hexA(A1,(1-k)*0.9); bgx.beginPath(); bgx.arc(s.x,s.y,Math.max(0.6,gh*0.008*(1-k)),0,TAU); bgx.fill(); }
+  // ---------- the LED clock, built into the glass above the logs ----------
+  const T=timeStr(); const txt=T.text; const secsOn=S.secs;
+  const fs=Math.min(gw*(secsOn?0.105:0.14), gh*0.34);
+  bgx.font=`700 ${fs}px 'DSEG7 Classic','DSEG7Classic','Share Tech Mono',monospace`; bgx.textAlign='center'; bgx.textBaseline='middle';
+  const ty=gy+gh*0.32;
+  bgx.globalCompositeOperation='source-over'; bgx.fillStyle=hexA(A1,0.10); bgx.fillText(txt.replace(/\d/g,'8'),cx0,ty);   // unlit segments
+  bgx.globalCompositeOperation='lighter'; bgx.shadowColor=hexA(A1,0.9); bgx.shadowBlur=fs*0.35; bgx.fillStyle=A1; bgx.fillText(txt,cx0,ty); bgx.shadowBlur=0;
+  if(S.fmt==='12'){ bgx.font=`700 ${fs*0.28}px 'Share Tech Mono',monospace`; bgx.textAlign='left'; bgx.fillStyle=hexA(A1,0.8); bgx.fillText(T.suffix.trim(),cx0+bgx.measureText(txt).width*0+gw*0.29,ty-fs*0.3); }
+  // glass: diagonal sheen + inner bevel
+  bgx.globalCompositeOperation='source-over'; g=bgx.createLinearGradient(gx,gy,gx+gw*0.6,gy+gh); g.addColorStop(0,'rgba(255,255,255,.10)'); g.addColorStop(0.35,'rgba(255,255,255,.02)'); g.addColorStop(0.36,'rgba(255,255,255,0)'); bgx.fillStyle=g; bgx.fillRect(gx,gy,gw,gh);
+  bgx.restore();
+  rrect(gx,gy,gw,gh,W*0.008); bgx.strokeStyle='rgba(0,0,0,.8)'; bgx.lineWidth=Math.max(1,W*0.004); bgx.stroke();
+  bgx.strokeStyle='rgba(255,255,255,.06)'; bgx.lineWidth=1; rrect(gx-1,gy-1,gw+2,gh+2,W*0.008); bgx.stroke();
+  // bezel: 3 status LEDs (one lit) + tiny brand mark
+  for(let i=0;i<3;i++){ const lx=x0+W/2+(i-1)*W*0.02, ly=y0+H*0.90; bgx.fillStyle=i===1?A1:'rgba(255,255,255,.12)'; bgx.beginPath(); bgx.arc(lx,ly,W*0.004,0,TAU); bgx.fill(); }
+  bgx.font=`italic 500 ${W*0.018}px Poppins,sans-serif`; bgx.textAlign='left'; bgx.textBaseline='middle'; bgx.fillStyle='rgba(255,255,255,.22)'; bgx.fillText('Lumina',x0+W*0.03,y0+H*0.905);
+  // ---------- flame-mist rising from the top slot (simulated) ----------
+  const lift=(1+Math.min(0.5,state.audio.bass*0.6));
+  const ph=Math.min(W*0.78,(slotY-topLimit)-W*0.02), pw=Math.min(slotW*1.25,ph*1.9); // plume box fits the headroom, aspect kept
+  for(let s=0;s<steps;s++) plumeFire.step(
+    (x)=>{ const u=(x/(plumeFire.w-1)-0.5)*2; const base=Math.exp(-u*u*3.4);
+      const flick=0.62+0.38*Math.abs(Math.sin(t*4.7+x*0.35)*Math.sin(t*2.9-x*0.17))+Math.random()*0.18;
+      const gaps=0.7+0.3*Math.sin(t*2.1+x*0.42)*Math.sin(t*0.9+x*0.11);
+      return Math.min(1.15, base*flick*gaps*lift*(0.9+0.1*Math.sin(t*13.3+x))); },
+    (y)=>Math.sin(t*1.15+(y/plumeFire.h)*4.2)*0.11+Math.sin(t*2.6+(y/plumeFire.h)*9.7)*0.05+Math.sin(t*0.5)*0.04,
+    (y)=>0.981+0.012*(y/plumeFire.h));
+  const pf=plumeFire.render(lut);
+  bgx.save(); bgx.globalCompositeOperation=light?'source-over':'lighter'; bgx.imageSmoothingEnabled=true;
+  bgx.globalAlpha=0.3; bgx.drawImage(pf,slotX-pw*0.62,slotY+W*0.02-ph*1.12,pw*1.24,ph*1.12);   // soft bloom
+  bgx.globalAlpha=0.95; bgx.drawImage(pf,slotX-pw/2,slotY+W*0.015-ph,pw,ph);                // the plume
+  bgx.globalAlpha=1;
+  bgx.restore();
+}
+registerTheme('serene',{ name:'Serene', desc:'Soothing two-tone, dusk diffuser', kind:'dom', noBackdrop:true, draw(){ drawDiffuser(); } });
+registerTheme('hearth',{ name:'Hearth', desc:'Flame diffuser with LED clock', kind:'canvas', init(){ flames=[]; mist=[]; sparks=[]; plumeFire.a.fill(0); hearthFire.a.fill(0); }, draw(dt){ drawHearth(dt); } });
 registerTheme('neon',{ name:'Neon', desc:'Glowing tube numerals', kind:'dom',
   draw(){ const g=0.6+state.audio.bass*1.5; if(Math.abs(g-(this._g||0))>0.05){ this._g=g; $('#layer-neon').style.setProperty('--glow',g.toFixed(2)); } }
 });
