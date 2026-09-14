@@ -1646,8 +1646,24 @@ registerTheme('serene',{ name:'Serene', desc:'Soothing two-tone, dusk diffuser',
 const gl3d=$('#gl3d'); let hearth3dState='idle';   // idle | loading | ready | failed
 function hearth3dLoad(){ if(hearth3dState!=='idle') return; hearth3dState='loading';
   const test=document.createElement('canvas'); if(!test.getContext('webgl2')){ hearth3dState='failed'; return; }
-  import('./hearth3d.js').then(()=>{ try{ window.HearthGL.init(gl3d); hearth3dSync(); hearth3dState='ready'; }catch(e){ console.warn('hearth3d init failed',e); hearth3dState='failed'; } })
+  import('./hearth3d.js').then(()=>{ try{ window.HearthGL.init(gl3d); hearth3dSync(); hearth3dState='ready'; hearthMotionHook(); }catch(e){ console.warn('hearth3d init failed',e); hearth3dState='failed'; } })
     .catch(e=>{ console.warn('hearth3d load failed',e); hearth3dState='failed'; }); }
+/* phone motion -> the vapor: iOS needs a permission prompt from a tap; Android/desktop just attach */
+let hearthMotionHooked=false;
+function hearthMotionHook(){ if(hearthMotionHooked) return; hearthMotionHooked=true;
+  const live=()=>hearth3dState==='ready'&&activeTheme&&activeTheme.id==='hearth'&&window.HearthGL;
+  const ang=()=>{ const a=(screen.orientation&&typeof screen.orientation.angle==='number')?screen.orientation.angle:(window.orientation||0); return ((a%360)+360)%360; };
+  const onMotion=(e)=>{ if(!live()) return; const a=e.acceleration||{}, r=e.rotationRate||{}; let ax=a.x||0, ay=a.y||0; const o=ang();
+    if(o===90){ [ax,ay]=[-ay,ax]; } else if(o===270){ [ax,ay]=[ay,-ax]; } else if(o===180){ ax=-ax; ay=-ay; }
+    window.HearthGL.motion(ax,ay,a.z||0,r.beta||0,r.gamma||0,r.alpha||0); };
+  const onOrient=(e)=>{ if(!live()) return; let g=e.gamma||0, b=e.beta||0; const o=ang();
+    if(o===90){ [g,b]=[b,-g]; } else if(o===270){ [g,b]=[-b,g]; } window.HearthGL.tilt(g,b); };
+  const start=()=>{ addEventListener('devicemotion',onMotion,{passive:true}); addEventListener('deviceorientation',onOrient,{passive:true}); };
+  const needsAsk=typeof DeviceMotionEvent!=='undefined'&&typeof DeviceMotionEvent.requestPermission==='function';
+  if(needsAsk){ const ask=()=>{ Promise.allSettled([DeviceMotionEvent.requestPermission(), (typeof DeviceOrientationEvent!=='undefined'&&DeviceOrientationEvent.requestPermission)?DeviceOrientationEvent.requestPermission():Promise.resolve('granted')])
+      .then(rs=>{ if(rs.some(r=>r.status==='fulfilled'&&r.value==='granted')) start(); }); };
+    addEventListener('pointerdown',ask,{once:true}); }
+  else start(); }
 function hearth3dSync(){ if(!window.HearthGL||!window.HearthGL.ready) return; window.HearthGL.resize(state.w,state.h); window.HearthGL.setColors(S.accent,S.accent2); }
 registerTheme('hearth',{ name:'Hearth', desc:'Flame diffuser with LED clock', kind:'canvas',
   init(){ flames=[]; mist=[]; sparks=[]; plumeFire.a.fill(0); hearthFire.a.fill(0); hearth3dLoad(); if(hearth3dState==='ready'){ hearth3dSync(); gl3d.style.display='block'; } $('#weatherfx').style.visibility='hidden'; },   // indoor scene: no stars/rain overlay

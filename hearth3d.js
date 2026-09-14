@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { EffectComposer, RenderPass, EffectPass, BloomEffect, NoiseEffect, VignetteEffect,
+import { EffectComposer, RenderPass, EffectPass, Effect, BloomEffect, NoiseEffect, VignetteEffect,
          ToneMappingEffect, ToneMappingMode, BlendFunction } from 'postprocessing';
 
 /* ---------- 1/f ("pink") flicker: real flames dim and wander, they never blink or sine ---------- */
@@ -52,6 +52,44 @@ function barkTexture() {
   const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; return t;
 }
 
+/* ---------- charred log textures: charcoal + ash on the colour map, glowing cracks on the emissive map (same crack paths) ---------- */
+function charredTextures() {
+  const W = 1024, H = 256, c = document.createElement('canvas'), e = document.createElement('canvas'); c.width = e.width = W; c.height = e.height = H;
+  const x = c.getContext('2d'), ex = e.getContext('2d');
+  x.fillStyle = '#1b1816'; x.fillRect(0, 0, W, H); ex.fillStyle = '#000'; ex.fillRect(0, 0, W, H);
+  for (let i = 0; i < 9000; i++) { const g = 14 + Math.random() * 40 | 0; x.fillStyle = `rgba(${g},${g - 2},${g - 4},${0.5 + Math.random() * 0.5})`; x.fillRect(Math.random() * W, Math.random() * H, 1 + Math.random() * 4, 1 + Math.random() * 2); }
+  for (let i = 0; i < 70; i++) { const g = 70 + Math.random() * 60 | 0; x.fillStyle = `rgba(${g},${g - 4},${g - 8},${0.12 + Math.random() * 0.25})`;      // ash patches
+    x.beginPath(); x.ellipse(Math.random() * W, Math.random() * H, 14 + Math.random() * 60, 6 + Math.random() * 16, Math.random() * 3, 0, Math.PI * 2); x.fill(); }
+  // char-crack cells: dark grooves on the colour map, bright glow along the same grooves on the emissive map
+  const crack = (x0, y0, len, ang, w) => { let px = x0, py = y0; x.beginPath(); ex.beginPath(); x.moveTo(px, py); ex.moveTo(px, py);
+    for (let k = 0; k < 8; k++) { ang += (Math.random() - 0.5) * 0.9; px += Math.cos(ang) * len / 8; py += Math.sin(ang) * len / 8; x.lineTo(px, py); ex.lineTo(px, py); }
+    x.strokeStyle = 'rgba(0,0,0,.9)'; x.lineWidth = w; x.stroke(); ex.strokeStyle = `rgba(255,${150 + Math.random() * 60 | 0},60,${0.7 + Math.random() * 0.3})`; ex.lineWidth = w * 1.0; ex.stroke(); };
+  for (let i = 0; i < 64; i++) crack(Math.random() * W, Math.random() * H, 60 + Math.random() * 140, (Math.random() < 0.6 ? 0 : Math.PI / 2) + (Math.random() - 0.5) * 0.7, 1.5 + Math.random() * 2.5);
+  for (let i = 0; i < 120; i++) crack(Math.random() * W, Math.random() * H, 15 + Math.random() * 30, Math.random() * Math.PI, 0.8 + Math.random());
+  ex.filter = 'blur(2px)'; ex.drawImage(e, 0, 0); ex.filter = 'none';
+  const map = new THREE.CanvasTexture(c), em = new THREE.CanvasTexture(e); map.colorSpace = em.colorSpace = THREE.SRGBColorSpace;
+  map.wrapS = map.wrapT = em.wrapS = em.wrapT = THREE.RepeatWrapping; return { map, em };
+}
+/* a charred log: tapered cylinder, vertices pushed by noise (bumps, flats, splits), knots, glowing cracks */
+function makeLog(len, r, tex, seed) {
+  const g = new THREE.CylinderGeometry(r * 0.78, r, len, 22, 26, false); g.rotateZ(Math.PI / 2);
+  const p = g.attributes.position, v = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) { v.fromBufferAttribute(p, i); const ang = Math.atan2(v.z, v.y), u = v.x / len + 0.5;
+    const rr = Math.hypot(v.y, v.z); if (rr < 1e-5) continue;
+    const bump = 1 + 0.16 * (n1(ang * 1.6 + seed) - 0.5) + 0.12 * (n1(u * 9 + ang * 0.7 + seed * 3) - 0.5) + 0.06 * (n1(u * 31 + seed) - 0.5);
+    const flat = 1 - 0.18 * Math.max(0, Math.cos(ang - 0.6 - seed)) ** 6;                          // one flattened, split-looking side
+    const k = rr * bump * flat / rr; v.y *= k; v.z *= k; v.y += 0.003 * Math.sin(u * Math.PI) * (n1(seed) - 0.5);   // slight bow
+    p.setXYZ(i, v.x, v.y, v.z); }
+  g.computeVertexNormals();
+  const mat = new THREE.MeshStandardMaterial({ map: tex.map, color: 0xd8d0c8, roughness: 0.94, metalness: 0, bumpMap: tex.map, bumpScale: 0.0025,
+    emissiveMap: tex.em, emissive: new THREE.Color(0xff6a1a), emissiveIntensity: 1.2 });
+  mat.map.repeat.set(1, 1);
+  const mesh = new THREE.Mesh(g, mat); mesh.userData.ph = seed * 7.3;
+  for (let i = 0; i < 2; i++) { const k = new THREE.Mesh(new THREE.SphereGeometry(r * (0.35 + Math.random() * 0.25), 10, 8), mat);
+    k.scale.set(1, 0.7, 0.9); const a = Math.random() * Math.PI * 2; k.position.set((Math.random() - 0.5) * len * 0.7, Math.cos(a) * r * 0.85, Math.sin(a) * r * 0.85); mesh.add(k); }
+  return mesh;
+}
+
 /* ---------- the device (real-world metres: 24 cm x 8 cm x 10 cm) ---------- */
 const DEV = { W: 0.24, H: 0.08, D: 0.10 };
 function buildDevice(scene, env) {
@@ -79,12 +117,16 @@ function buildDevice(scene, env) {
   // top slot for the mist
   const slot = new THREE.Mesh(new RoundedBoxGeometry(W * 0.56, 0.006, 0.014, 3, 0.002), new THREE.MeshStandardMaterial({ color: 0x050303, roughness: 0.9 }));
   slot.position.set(0, H - 0.001, 0); g.add(slot);
-  // logs: capsules with bark, lying in the cavity
-  const bark = barkTexture(); const logMat = new THREE.MeshStandardMaterial({ map: bark, color: 0x8a6a4c, roughness: 0.95, bumpMap: bark, bumpScale: 0.003 });
-  const logs = [ [0.070, 0.0075, -0.045, 0.010, -0.012, 0.05, 0.10], [0.062, 0.007, 0.040, 0.009, 0.012, -0.06, 0.02],
-                 [0.078, 0.0068, -0.005, 0.024, -0.005, 0.30, 0.18], [0.050, 0.0065, -0.055, 0.021, 0.012, 0.02, -0.14], [0.056, 0.007, 0.052, 0.022, 0.010, -0.05, 0.12] ];
-  const yBase = winBottom + 0.003;
-  for (const [len, r, x, y, z, rz, ry] of logs) { const m = new THREE.Mesh(new THREE.CapsuleGeometry(r, len, 6, 14), logMat); m.rotation.set(0, ry, Math.PI / 2 + rz); m.position.set(x, yBase + y, z); g.add(m); }
+  // logs: charred, cracked, glowing from within (what flame-diffuser inserts actually look like)
+  const ctex = charredTextures(); const logMeshes = [];
+  const logs = [ [0.084, 0.0115, -0.048, 0.013, -0.016, 0.05, 0.10], [0.076, 0.0108, 0.044, 0.012, 0.012, -0.06, 0.02],
+                 [0.094, 0.0100, -0.004, 0.031, -0.008, 0.28, 0.18], [0.058, 0.0095, -0.060, 0.027, 0.014, 0.02, -0.14], [0.068, 0.0102, 0.058, 0.028, 0.012, -0.05, 0.12] ];
+  const yBase = winBottom + 0.003; let li = 0;
+  for (const [len, r, x, y, z, rz, ry] of logs) { const m = makeLog(len, r, ctex, ++li); m.rotation.set(0, ry, rz); m.position.set(x, yBase + y, z); g.add(m); logMeshes.push(m); }
+  // ash & ember chunks on the bed
+  const chunkMat = new THREE.MeshStandardMaterial({ map: ctex.map, color: 0xbdb5ad, roughness: 1, emissiveMap: ctex.em, emissive: new THREE.Color(0xff4a10), emissiveIntensity: 0.8 });
+  for (let i = 0; i < 26; i++) { const m = new THREE.Mesh(new THREE.DodecahedronGeometry(0.0025 + Math.random() * 0.0035, 0), chunkMat);
+    m.position.set((Math.random() - 0.5) * winW * 0.86, yBase - 0.001 + Math.random() * 0.002, (Math.random() - 0.5) * 0.055); m.rotation.set(Math.random() * 3, Math.random() * 3, 0); m.scale.y = 0.6; g.add(m); }
   // embers: tiny emissive spheres under the logs (bloom picks these up)
   const embers = []; for (let i = 0; i < 14; i++) { const m = new THREE.Mesh(new THREE.SphereGeometry(0.0022 + Math.random() * 0.002, 8, 6),
       new THREE.MeshStandardMaterial({ color: 0x110302, emissive: new THREE.Color(0xff5a10), emissiveIntensity: 4, roughness: 1 }));
@@ -96,9 +138,9 @@ function buildDevice(scene, env) {
   const ledOn = new THREE.Mesh(new THREE.SphereGeometry(0.0012, 8, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(1.3, 0.7, 0.25) })); ledOn.position.set(0, 0.008, D / 2 + 0.0008); g.add(ledOn);
   for (const dx of [-0.006, 0.006]) { const l = new THREE.Mesh(new THREE.SphereGeometry(0.001, 8, 8), new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.4 })); l.position.set(dx, 0.008, D / 2 + 0.0008); g.add(l); }
   // interior LED light (lights the logs from below) + the slot LED light (spills onto the top and the table)
-  const innerLight = new THREE.PointLight(0xff7a1a, 0.35, 0.11, 2); innerLight.position.set(0, yBase + 0.014, 0.0);   // short range: stays inside the cavity (no shadow maps) g.add(innerLight);
+  const innerLight = new THREE.PointLight(0xff7a1a, 0.55, 0.12, 2); innerLight.position.set(0, yBase + 0.014, 0.0);   // short range: stays inside the cavity (no shadow maps) g.add(innerLight);
   const slotLight = new THREE.PointLight(0xff8a2a, 0.6, 0.32, 2); slotLight.position.set(0, H + 0.04, 0.0); g.add(slotLight);
-  g.userData = { embers, innerLight, slotLight, winW, winH, winY, yBase, glass };
+  g.userData = { embers, logMeshes, innerLight, slotLight, winW, winH, winY, yBase, glass };
   scene.add(g); return g;
 }
 
@@ -120,20 +162,21 @@ function buildRoom(scene) {
 /* ---------- the LED-lit mist sheet (this is what a flame diffuser actually produces) ---------- */
 function buildMist(group) {
   const geo = new THREE.PlaneGeometry(0.17, 0.30, 24, 72); geo.translate(0, 0.15, 0);   // pivot at the slot
-  const uniforms = { uTime: { value: 0 }, uLed: { value: 1 }, uLift: { value: 1 }, uBase: { value: new THREE.Color(1.0, 0.42, 0.08) }, uMid: { value: new THREE.Color(1.0, 0.72, 0.35) }, uVapor: { value: new THREE.Color(0.85, 0.85, 0.9) }, uAlpha: { value: 0.62 }, uGlow: { value: 1.0 } };
+  const uniforms = { uTime: { value: 0 }, uLed: { value: 1 }, uLift: { value: 1 }, uWind: { value: new THREE.Vector2(0, 0) }, uTurb: { value: 0 }, uBase: { value: new THREE.Color(1.0, 0.42, 0.08) }, uMid: { value: new THREE.Color(1.0, 0.72, 0.35) }, uVapor: { value: new THREE.Color(0.85, 0.85, 0.9) }, uAlpha: { value: 0.62 }, uGlow: { value: 1.0 } };
   const vert = `${GLSL_NOISE}
-    uniform float uTime, uLift; varying vec2 vUv; varying vec3 vView;
+    uniform float uTime, uLift, uTurb; uniform vec2 uWind; varying vec2 vUv; varying vec3 vView;
     void main(){ vUv=uv; vec3 p=position; p.y*=uLift;
-      float h=smoothstep(0.,1.,uv.y);
-      p.x += sin(uTime*0.9+position.y*18.0)*0.006*h + (noise3(vec3(uTime*0.35, position.y*9.0, 1.7))-0.5)*0.05*h;
-      p.z += (noise3(vec3(uTime*0.3+7.0, position.y*12.0, 3.1))-0.5)*0.03*h;
+      float h=smoothstep(0.,1.,uv.y); float amp=1.0+uTurb*2.5;
+      p.x += sin(uTime*0.9+position.y*18.0)*0.006*h + (noise3(vec3(uTime*(0.35+uTurb), position.y*9.0, 1.7))-0.5)*0.05*h*amp;
+      p.z += (noise3(vec3(uTime*(0.3+uTurb)+7.0, position.y*12.0, 3.1))-0.5)*0.03*h*amp;
+      p.x += uWind.x*h*h*0.22; p.z += uWind.y*h*h*0.22;                                    // inertia lean: the vapor lags behind the device
       vec4 mv=modelViewMatrix*vec4(p,1.); vView=normalize(-mv.xyz); gl_Position=projectionMatrix*mv; }`;
   const frag = `${GLSL_NOISE}
     uniform float uTime, uLed, uAlpha, uGlow; uniform vec3 uBase, uMid, uVapor; varying vec2 vUv; varying vec3 vView;
     void main(){
       float h=vUv.y;
-      float n=fbm3(vec3(vUv.x*3.0, vUv.y*4.0-uTime*0.42, uTime*0.12));                   // slow upward scroll
-      float n2=fbm3(vec3(vUv.x*7.0+3.0, vUv.y*9.0-uTime*0.9, uTime*0.2));                // fine ragged edges
+      float n=fbm3(vec3(vUv.x*4.5, vUv.y*2.6-uTime*0.55, uTime*0.16));                   // rising, vertically-stretched structure
+      float n2=fbm3(vec3(vUv.x*11.0+3.0, vUv.y*5.5-uTime*1.1, uTime*0.28));              // fine ragged filaments
       float edge=abs(vUv.x-0.5)+(n-0.5)*0.28*(0.35+h)+(n2-0.5)*0.10*h;
       float widthMask=1.0-smoothstep(0.22+0.10*h, 0.40+0.08*h, edge);                     // ragged ribbon, widening as it rises
       float body=pow(0.35+0.65*n,1.8)*(0.6+0.4*n2);
@@ -141,7 +184,7 @@ function buildMist(group) {
       float density=widthMask*body*(1.0-smoothstep(top-0.35,top+0.12,h))*smoothstep(0.0,0.05,h);
       density=max(0.0, density - h*0.35*(1.0-n2));                                          // alpha erosion: torn, thinning top
       vec3 col=mix(uBase,uMid,smoothstep(0.0,0.30,h)); col=mix(col,uVapor,smoothstep(0.28,0.7,h));  // LED gradient, lit from below
-      float glow=uLed*(2.2-1.9*h)*uGlow*exp(-h*1.2);
+      float glow=uLed*(2.6-2.2*h)*uGlow*exp(-h*1.3)*(0.85+0.3*n2);
       float scatter=pow(max(dot(vView,vec3(0.,-1.,0.)),0.0),3.0)*0.4;                     // forward scatter feel
       gl_FragColor=vec4(col*(glow+scatter), density*uAlpha); }`;
   const matA = new THREE.ShaderMaterial({ uniforms, vertexShader: vert, fragmentShader: frag, transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.NormalBlending });
@@ -164,33 +207,44 @@ function buildVapor(group) {
 }
 /* ---------- the LED clock: rendered at device resolution into a texture, emissive so it blooms like a real display ---------- */
 function buildClock(group, winW, winH, winY) {
-  const c = document.createElement('canvas'); c.width = 2048; c.height = 560; const x = c.getContext('2d');
-  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4; tex.minFilter = THREE.LinearMipmapLinearFilter;
-  const w = winW * 0.58, h = w * (560 / 2048);
-  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, color: new THREE.Color(2.4, 1.5, 0.7) });
-  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat); mesh.position.set(0, winY + winH * 0.27, DEV.D / 2 - 0.016); mesh.renderOrder = 5; group.add(mesh);
-  const bleed = new THREE.Mesh(new THREE.PlaneGeometry(w * 1.06, h * 1.12), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0.18, color: new THREE.Color(1.6, 0.9, 0.4) }));
-  bleed.position.copy(mesh.position); bleed.position.z -= 0.001; bleed.renderOrder = 4; group.add(bleed);
+  const c = document.createElement('canvas'); c.width = 2048; c.height = 640; const x = c.getContext('2d');
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8; tex.minFilter = THREE.LinearMipmapLinearFilter; tex.generateMipmaps = true;
+  const h = winH * 0.84, w = h * (2048 / 640);                                            // digits span ~84% of the window height
+  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, color: new THREE.Color(1.55, 1.0, 0.5) });
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat); mesh.position.set(0, winY + winH * 0.02, DEV.D / 2 - 0.012); mesh.renderOrder = 5; group.add(mesh);
+  const bleed = { material: new THREE.MeshBasicMaterial() };                                   // (no duplicate glow plane: it doubled the edges)
   let last = '';
   function set(text, ghost, hex) {
     if (text === last) return; last = text;
     x.clearRect(0, 0, c.width, c.height); x.textAlign = 'center'; x.textBaseline = 'middle';
-    const fs = text.length > 5 ? 330 : 430; x.font = `700 ${fs}px 'DSEG7 Classic','DSEG7Classic','Share Tech Mono',monospace`;
-    x.fillStyle = 'rgba(255,255,255,0.07)'; x.fillText(ghost, 1024, 300);                // unlit segments
-    x.shadowColor = hex; x.shadowBlur = 12; x.fillStyle = '#ffffff'; x.fillText(text, 1024, 300); x.shadowBlur = 0;
+    const fs = text.length > 5 ? 380 : 540; x.font = `700 ${fs}px 'DSEG7 Classic','DSEG7Classic','Share Tech Mono',monospace`;
+    x.fillStyle = 'rgba(255,255,255,0.06)'; x.fillText(ghost, 1024, 330);                // unlit segments
+    x.fillStyle = '#ffffff'; x.fillText(text, 1024, 330);                                 // crisp: no baked blur, bloom supplies the halo
     tex.needsUpdate = true;
   }
   return { set, mesh, bleed, mat };
 }
 
 /* ---------- scene / renderer / post ---------- */
+/* ---------- heat shimmer: refract the image in a soft band above the slot (hot vapor bends light) ---------- */
+const HEAT_FRAG = `uniform float uTime; uniform vec4 uBand; uniform float uAmt;
+  float hh(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+  float nn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f); return mix(mix(hh(i),hh(i+vec2(1.,0.)),f.x),mix(hh(i+vec2(0.,1.)),hh(i+vec2(1.,1.)),f.x),f.y); }
+  float fb(vec2 p){ float v=0., a=.5; for(int i=0;i<3;i++){ v+=a*nn(p); p=p*2.03+1.7; a*=.5; } return v; }
+  void mainUv(inout vec2 uv){
+    float dx=abs(uv.x-uBand.x)/max(uBand.z,1e-4), dy=(uv.y-uBand.y)/max(uBand.w,1e-4);
+    float mask=(1.-smoothstep(0.6,1.3,dx))*smoothstep(0.03,0.2,dy)*(1.-smoothstep(0.55,1.05,dy))*(1.-0.45*clamp(dy,0.,1.));
+    if(mask<0.002) return;
+    vec2 n=vec2(fb(uv*vec2(15.,7.)+vec2(0.,-uTime*1.5)), fb(uv*vec2(12.,6.)+vec2(5.3,-uTime*1.2)))-0.5;
+    uv+=n*uAmt*mask; }`;
+class HeatEffect extends Effect { constructor() { super('HeatEffect', HEAT_FRAG, { uniforms: new Map([['uTime', new THREE.Uniform(0)], ['uBand', new THREE.Uniform(new THREE.Vector4(0.5, 0.5, 0.1, 0.3))], ['uAmt', new THREE.Uniform(0.016)]]) }); } }
 const RED = new THREE.Color(1, 0.22, 0.04);
 export const HearthGL = (() => {
-  let renderer, scene, camera, composer, bloom, dev, mist, vapor, clock, room, canvas, ready = false, t0 = performance.now(), tPrev = 0, tSim = 0, land = false, plumeH = 0.22;
+  let renderer, scene, camera, composer, bloom, heat, dev, mist, vapor, clock, room, canvas, ready = false, t0 = performance.now(), tPrev = 0, tSim = 0, land = false, plumeH = 0.22;
   function init(el) {
     canvas = el;
     renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, powerPreference: 'high-performance', stencil: false, depth: true });
-    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2)); renderer.toneMapping = THREE.NoToneMapping; renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 3));   // native 3x on iPhone Pro -> crisp digits renderer.toneMapping = THREE.NoToneMapping; renderer.outputColorSpace = THREE.SRGBColorSpace;
     scene = new THREE.Scene(); scene.background = new THREE.Color(0x0a080d);
     const pmrem = new THREE.PMREMGenerator(renderer); scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture; scene.environmentIntensity = 0.25;
     camera = new THREE.PerspectiveCamera(32, 1, 0.02, 20);
@@ -202,7 +256,8 @@ export const HearthGL = (() => {
     composer.addPass(new RenderPass(scene, camera));
     bloom = new BloomEffect({ luminanceThreshold: 0.82, luminanceSmoothing: 0.25, intensity: 1.1, mipmapBlur: true, radius: 0.7, levels: 6, resolutionScale: 0.5 });
     const grain = new NoiseEffect({ premultiply: true, blendFunction: BlendFunction.OVERLAY }); grain.blendMode.opacity.value = 0.05;
-    composer.addPass(new EffectPass(camera, bloom, grain, new VignetteEffect({ offset: 0.33, darkness: 0.58 }), new ToneMappingEffect({ mode: ToneMappingMode.ACES_FILMIC })));
+    heat = new HeatEffect();
+    composer.addPass(new EffectPass(camera, heat, bloom, grain, new VignetteEffect({ offset: 0.33, darkness: 0.58 }), new ToneMappingEffect({ mode: ToneMappingMode.ACES_FILMIC })));
     ready = true; return true;
   }
   function resize(w, h) {
@@ -210,11 +265,11 @@ export const HearthGL = (() => {
     plumeH = land ? 0.125 : 0.24; mist.uniforms.uLift.value = plumeH / 0.30;
     // frame: device width must fill ~88% of the view, AND device+plume must fit vertically -> take the farther distance
     const vf = THREE.MathUtils.degToRad(camera.fov), hf = 2 * Math.atan(Math.tan(vf / 2) * camera.aspect);
-    const needW = DEV.W * (land ? 1.10 : 1.08), needH = (DEV.H + plumeH) * 1.08;
+    const needW = DEV.W * (land ? 0.98 : 1.05), needH = (DEV.H + plumeH) * 1.0;
     // fit is measured at the device's FRONT face (nearest point), not its centre, so nothing crops
     const dist = DEV.D / 2 + Math.max(needW / 2 / Math.tan(hf / 2), needH / 2 / Math.tan(vf / 2));
     const cy = (DEV.H + plumeH) * 0.46;
-    camera.position.set(0.015, cy + dist * 0.045, dist); camera.lookAt(0.004, cy, 0); camera.updateProjectionMatrix();
+    camera.position.set(0.012, cy + dist * 0.07, dist); camera.lookAt(0.004, cy - 0.004, 0); camera.updateProjectionMatrix();
     vapor.pts.material.uniforms.uScale.value = h * 0.9 * renderer.getPixelRatio();
   }
   function setColors(hexA, hexB) {
@@ -225,16 +280,36 @@ export const HearthGL = (() => {
     clock.mat.color.copy(a).multiplyScalar(2.2); clock.bleed.material.color.copy(a).multiplyScalar(1.4);
     clock.hex = hexA;
   }
+  // device-motion model: a wind vector (x = screen right, z = toward viewer) with spring-damper dynamics
+  const wind = { x: 0, z: 0, vx: 0, vz: 0, tx: 0, tz: 0, turb: 0 };
+  function motion(ax, ay, az, rx, ry, rz) {            // accelerations in m/s^2 (screen-aligned, gravity removed), rotation rates deg/s
+    const k = 0.11; wind.vx -= ax * k; wind.vz -= az * k * 0.6; wind.vx -= (rz || 0) * 0.0012;
+    const j = Math.min(1, Math.hypot(ax, ay, az) / 6 + Math.hypot(rx || 0, ry || 0, rz || 0) / 400); wind.turb = Math.max(wind.turb, j);
+    liftKick = Math.max(-0.35, Math.min(0.35, liftKick - ay * 0.02));
+  }
+  const tiltBase = { g: null, b: null };
+  function tilt(gammaDeg, betaDeg) {                    // react to CHANGES in tilt (high-passed): a swing leans the plume, holding still settles it upright
+    if (tiltBase.g === null) { tiltBase.g = gammaDeg || 0; tiltBase.b = betaDeg || 0; }
+    tiltBase.g += ((gammaDeg || 0) - tiltBase.g) * 0.03; tiltBase.b += ((betaDeg || 0) - tiltBase.b) * 0.03;
+    wind.tx = -Math.sin(THREE.MathUtils.degToRad(Math.max(-60, Math.min(60, (gammaDeg || 0) - tiltBase.g)))) * 1.1;
+    wind.tz = Math.sin(THREE.MathUtils.degToRad(Math.max(-60, Math.min(60, (betaDeg || 0) - tiltBase.b)))) * 0.4;
+  }
+  let liftKick = 0;
   function render(dt, timeText, ghost, motion = 1, bass = 0) {
     if (!ready) return; tSim += dt * (0.35 + 0.65 * motion); const t = tSim;
+    // integrate the wind spring (stiffness 18, damping 5.5 -> settles in ~1 s like real vapor)
+    wind.vx += ((wind.tx - wind.x) * 18 - wind.vx * 5.5) * dt; wind.vz += ((wind.tz - wind.z) * 18 - wind.vz * 5.5) * dt;
+    wind.x += wind.vx * dt; wind.z += wind.vz * dt; wind.turb *= Math.exp(-dt * 2.2); liftKick *= Math.exp(-dt * 3);
+    mist.uniforms.uWind.value.set(wind.x, wind.z); mist.uniforms.uTurb.value = wind.turb; mist.uniforms.uLift.value = (plumeH / 0.30) * (1 + liftKick);
     // 1/f flicker drives the LED brightness, its colour (dimmer = redder), and the light's position wander
     const f = 0.78 + 0.22 * pink(t * 1.6), fslow = 0.85 + 0.15 * pink(t * 0.35, 9);
     const L = dev.userData.slotLight; L.intensity = 0.42 * f * (1 + bass * 0.4); L.position.x = 0.03 * (pink(t * 0.7, 3) - 0.5);
     L.color.copy(dev.userData.slotBase || L.color).lerp(RED, (1 - f) * 0.5);                 // dimmer moments are redder
-    dev.userData.innerLight.intensity = 0.32 * (0.9 + 0.1 * pink(t * 2.1, 5));
+    dev.userData.innerLight.intensity = 0.5 * (0.88 + 0.12 * pink(t * 2.1, 5));
     mist.uniforms.uTime.value = t; mist.uniforms.uLed.value = f * fslow; mist.uniforms.uGlow.value = 1 + bass * 0.5;
     bloom.intensity = 0.95 + 0.4 * (f - 0.78) / 0.22;
     for (const e of dev.userData.embers) e.material.emissiveIntensity = 1.4 + 2.2 * pink(t * 0.9 + e.userData.ph, 7);
+    for (const m of dev.userData.logMeshes) m.material.emissiveIntensity = 2.6 + 3.4 * pink(t * 0.7 + m.userData.ph, 13);
     // vapor particles: born at the slot, drift up slowly with lazy curl, fade out
     const V = vapor, base = mist.uniforms.uBase.value, vap = mist.uniforms.uVapor.value, tmp = new THREE.Color();
     for (let i = 0; i < V.N; i++) { V.life[i] += dt * (0.4 + 0.6 * motion);
@@ -242,7 +317,7 @@ export const HearthGL = (() => {
         V.pos[i * 3] = (Math.random() - 0.5) * DEV.W * 0.45; V.pos[i * 3 + 1] = DEV.H + plumeH * (0.45 + Math.random() * 0.35); V.pos[i * 3 + 2] = (Math.random() - 0.5) * 0.02;
         V.vel[i * 3] = (Math.random() - 0.5) * 0.01; V.vel[i * 3 + 1] = 0.05 + Math.random() * 0.04; V.vel[i * 3 + 2] = (Math.random() - 0.5) * 0.006; }
       const k = V.life[i] / V.dur[i]; if (k < 0) continue;
-      V.pos[i * 3] += (V.vel[i * 3] + 0.012 * (pink(t * 0.5 + i, 11) - 0.5)) * dt; V.pos[i * 3 + 1] += V.vel[i * 3 + 1] * dt; V.pos[i * 3 + 2] += V.vel[i * 3 + 2] * dt;
+      V.pos[i * 3] += (V.vel[i * 3] + 0.012 * (pink(t * 0.5 + i, 11) - 0.5) + wind.x * 0.06) * dt; V.pos[i * 3 + 1] += V.vel[i * 3 + 1] * dt; V.pos[i * 3 + 2] += (V.vel[i * 3 + 2] + wind.z * 0.06) * dt;
       const hgt = THREE.MathUtils.clamp((V.pos[i * 3 + 1] - DEV.H) / plumeH, 0, 1);
       tmp.copy(base).lerp(vap, THREE.MathUtils.smoothstep(hgt, 0.3, 0.9)).multiplyScalar(0.9 * f); V.col[i * 3] = tmp.r; V.col[i * 3 + 1] = tmp.g; V.col[i * 3 + 2] = tmp.b;
       V.sz[i] = 0.011 * (1 + 2.2 * k) * Math.sin(Math.PI * k); }
@@ -251,8 +326,13 @@ export const HearthGL = (() => {
     if (motion > 0) { camera.position.x += (0.006 * Math.sin(t * 2 * Math.PI / 41) - (camera.userData.dx || 0)); camera.userData.dx = 0.006 * Math.sin(t * 2 * Math.PI / 41);
       camera.position.y += (0.004 * Math.sin(t * 2 * Math.PI / 67) - (camera.userData.dy || 0)); camera.userData.dy = 0.004 * Math.sin(t * 2 * Math.PI / 67); }
     clock.set(timeText, ghost, clock.hex || '#ffb347');
+    // heat band: project slot centre, slot half-width and plume top into screen uv
+    const P = (x, y, z) => { const v = new THREE.Vector3(x, y, z).project(camera); return [v.x * 0.5 + 0.5, v.y * 0.5 + 0.5]; };
+    const c0 = P(0, DEV.H, 0), c1 = P(DEV.W * 0.28, DEV.H, 0), c2 = P(0, DEV.H + plumeH * 1.05, 0);
+    heat.uniforms.get('uBand').value.set(c0[0], c0[1], Math.abs(c1[0] - c0[0]), Math.max(0.01, c2[1] - c0[1]));
+    heat.uniforms.get('uTime').value = t; heat.uniforms.get('uAmt').value = 0.012 + 0.007 * f;
     composer.render(dt);
   }
-  return { init, resize, setColors, render, get ready() { return ready; } };
+  return { init, resize, setColors, render, motion, tilt, get ready() { return ready; } };
 })();
 window.HearthGL = HearthGL;
