@@ -436,10 +436,12 @@ body.calm #layer-bold .d{ transition:transform .5s cubic-bezier(.22,1,.36,1); }
   #layer-neon .time .fl,#layer-glass .glasscard::before,#layer-glass .glasscard::after,#layer-synth .grid{ animation:none; }
 }
 </style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/","postprocessing":"https://cdn.jsdelivr.net/npm/postprocessing@6.36.4/build/index.js"}}</script>
 </head>
 <body class="chrome-hidden">
 
   <canvas id="bgcanvas"></canvas>
+  <canvas id="gl3d" style="position:fixed;inset:0;width:100%;height:100%;display:none;z-index:1"></canvas>
   <canvas id="weatherfx"></canvas>
   <canvas id="viz"></canvas>
 
@@ -1640,7 +1642,23 @@ function drawHearth(dt){
   bgx.restore();
 }
 registerTheme('serene',{ name:'Serene', desc:'Soothing two-tone, dusk diffuser', kind:'dom', noBackdrop:true, draw(){ drawDiffuser(); } });
-registerTheme('hearth',{ name:'Hearth', desc:'Flame diffuser with LED clock', kind:'canvas', init(){ flames=[]; mist=[]; sparks=[]; plumeFire.a.fill(0); hearthFire.a.fill(0); }, draw(dt){ drawHearth(dt); } });
+/* Hearth: real-time 3D scene (Three.js, PBR + LED-lit mist + bloom) loaded on demand; the 2D painter is the fallback while it loads or without WebGL2 */
+const gl3d=$('#gl3d'); let hearth3dState='idle';   // idle | loading | ready | failed
+function hearth3dLoad(){ if(hearth3dState!=='idle') return; hearth3dState='loading';
+  const test=document.createElement('canvas'); if(!test.getContext('webgl2')){ hearth3dState='failed'; return; }
+  import('./hearth3d.js').then(()=>{ try{ window.HearthGL.init(gl3d); hearth3dSync(); hearth3dState='ready'; }catch(e){ console.warn('hearth3d init failed',e); hearth3dState='failed'; } })
+    .catch(e=>{ console.warn('hearth3d load failed',e); hearth3dState='failed'; }); }
+function hearth3dSync(){ if(!window.HearthGL||!window.HearthGL.ready) return; window.HearthGL.resize(state.w,state.h); window.HearthGL.setColors(S.accent,S.accent2); }
+registerTheme('hearth',{ name:'Hearth', desc:'Flame diffuser with LED clock', kind:'canvas',
+  init(){ flames=[]; mist=[]; sparks=[]; plumeFire.a.fill(0); hearthFire.a.fill(0); hearth3dLoad(); if(hearth3dState==='ready'){ hearth3dSync(); gl3d.style.display='block'; } $('#weatherfx').style.visibility='hidden'; },   // indoor scene: no stars/rain overlay
+  layout(){ hearth3dSync(); },
+  destroy(){ gl3d.style.display='none'; $('#weatherfx').style.visibility=''; },
+  draw(dt){
+    if(hearth3dState==='ready'){ if(gl3d.style.display!=='block'){ gl3d.style.display='block'; hearth3dSync(); }
+      if(this._acc!==S.accent||this._acc2!==S.accent2){ this._acc=S.accent; this._acc2=S.accent2; window.HearthGL.setColors(S.accent,S.accent2); }
+      bgx.clearRect(0,0,state.w,state.h); const T=timeStr(); const txt=T.text+(S.fmt==='12'?T.suffix:'');
+      window.HearthGL.render(Math.min(0.05,dt||0.016), txt, T.text.replace(/\d/g,'8'), MO(), state.audio.bass); return; }
+    drawHearth(dt); } });
 registerTheme('neon',{ name:'Neon', desc:'Glowing tube numerals', kind:'dom',
   draw(){ const g=0.6+state.audio.bass*1.5; if(Math.abs(g-(this._g||0))>0.05){ this._g=g; $('#layer-neon').style.setProperty('--glow',g.toFixed(2)); } }
 });
