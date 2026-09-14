@@ -111,11 +111,11 @@ function buildDevice(scene, env) {
   for (const sx of [-1, 1]) { const side = new THREE.Mesh(new THREE.PlaneGeometry(D - wall, winH), lining); side.rotation.y = sx * Math.PI / 2; side.position.set(sx * (winW / 2 - 0.0005), winY, -wall / 2); g.add(side); }
   const ceil = new THREE.Mesh(new THREE.PlaneGeometry(winW, D - wall), lining); ceil.rotation.x = Math.PI / 2; ceil.position.set(0, winTop - 0.0005, -wall / 2); g.add(ceil);
   // glass front: mostly clear, env-reflective, sits a little inside the opening
-  const glassMat = new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.04, metalness: 0, transparent: true, opacity: 0.12, clearcoat: 1, clearcoatRoughness: 0.03,
-    envMapIntensity: 1.5, specularIntensity: 1, depthWrite: false });
+  const glassMat = new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.06, metalness: 0, transparent: true, opacity: 0.05, clearcoat: 0.6, clearcoatRoughness: 0.08,
+    envMapIntensity: 0.45, specularIntensity: 0.5, depthWrite: false });
   const glass = new THREE.Mesh(new THREE.PlaneGeometry(winW, winH), glassMat); glass.position.set(0, winY, D / 2 - 0.003); g.add(glass);
   // top slot for the mist
-  const slot = new THREE.Mesh(new RoundedBoxGeometry(W * 0.56, 0.006, 0.014, 3, 0.002), new THREE.MeshStandardMaterial({ color: 0x050303, roughness: 0.9 }));
+  const slot = new THREE.Mesh(new RoundedBoxGeometry(W * 0.80, 0.007, 0.018, 3, 0.0025), new THREE.MeshStandardMaterial({ color: 0x050303, roughness: 0.9 }));
   slot.position.set(0, H - 0.001, 0); g.add(slot);
   // logs: charred, cracked, glowing from within (what flame-diffuser inserts actually look like)
   const ctex = charredTextures(); const logMeshes = [];
@@ -123,7 +123,7 @@ function buildDevice(scene, env) {
                  [0.094, 0.0100, -0.004, 0.031, -0.008, 0.28, 0.18], [0.058, 0.0095, -0.060, 0.027, 0.014, 0.02, -0.14], [0.068, 0.0102, 0.058, 0.028, 0.012, -0.05, 0.12] ];
   const yBase = winBottom + 0.003; let li = 0;
   for (const [len, r, x, y, z, rz, ry] of logs) { const m = makeLog(len, r, ctex, ++li); m.rotation.set(0, ry, rz); m.position.set(x, yBase + y, z);
-    m.userData.rest = { p: m.position.clone(), r: m.rotation.clone(), gain: 0.6 + Math.random() * 0.8, ph: Math.random() * 6.28 }; g.add(m); logMeshes.push(m); }
+    m.userData.rest = { p: m.position.clone(), r: m.rotation.clone(), gain: 0.7 + Math.random() * 0.6, radius: r, dx: 0, dz: 0, dy: 0, vx: 0, vz: 0, vy: 0 }; g.add(m); logMeshes.push(m); }
   // ash & ember chunks on the bed
   const chunkMat = new THREE.MeshStandardMaterial({ map: ctex.map, color: 0xbdb5ad, roughness: 1, emissiveMap: ctex.em, emissive: new THREE.Color(0xff4a10), emissiveIntensity: 0.8 });
   for (let i = 0; i < 26; i++) { const m = new THREE.Mesh(new THREE.DodecahedronGeometry(0.0025 + Math.random() * 0.0035, 0), chunkMat);
@@ -140,7 +140,7 @@ function buildDevice(scene, env) {
   for (const dx of [-0.006, 0.006]) { const l = new THREE.Mesh(new THREE.SphereGeometry(0.001, 8, 8), new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.4 })); l.position.set(dx, 0.008, D / 2 + 0.0008); g.add(l); }
   // interior LED light (lights the logs from below) + the slot LED light (spills onto the top and the table)
   const innerLight = new THREE.PointLight(0xff7a1a, 0.55, 0.12, 2); innerLight.position.set(0, yBase + 0.014, 0.0);   // short range: stays inside the cavity (no shadow maps) g.add(innerLight);
-  const slotLight = new THREE.PointLight(0xff8a2a, 0.6, 0.32, 2); slotLight.position.set(0, H + 0.04, 0.0); g.add(slotLight);
+  const slotLight = new THREE.PointLight(0xff8a2a, 0.7, 0.36, 2); slotLight.position.set(0, H + 0.04, 0.0); g.add(slotLight);
   g.userData = { embers, logMeshes, innerLight, slotLight, winW, winH, winY, yBase, glass };
   scene.add(g); return g;
 }
@@ -162,14 +162,15 @@ function buildRoom(scene) {
 
 /* ---------- the LED-lit mist sheet (this is what a flame diffuser actually produces) ---------- */
 function buildMist(group) {
-  const geo = new THREE.PlaneGeometry(0.17, 0.30, 24, 72); geo.translate(0, 0.15, 0);   // pivot at the slot
+  const geo = new THREE.PlaneGeometry(0.30, 0.30, 36, 72); geo.translate(0, 0.15, 0);   // pivot at the slot; wide enough for the ribbon to spread
   const uniforms = { uTime: { value: 0 }, uLed: { value: 1 }, uLift: { value: 1 }, uWind: { value: new THREE.Vector2(0, 0) }, uTurb: { value: 0 }, uBase: { value: new THREE.Color(1.0, 0.42, 0.08) }, uMid: { value: new THREE.Color(1.0, 0.72, 0.35) }, uVapor: { value: new THREE.Color(0.85, 0.85, 0.9) }, uAlpha: { value: 0.62 }, uGlow: { value: 1.0 } };
   const vert = `${GLSL_NOISE}
     uniform float uTime, uLift, uTurb; uniform vec2 uWind; varying vec2 vUv; varying vec3 vView;
     void main(){ vUv=uv; vec3 p=position; p.y*=uLift;
-      float h=smoothstep(0.,1.,uv.y); float amp=1.0+uTurb*2.5;
-      p.x += sin(uTime*0.9+position.y*18.0)*0.006*h + (noise3(vec3(uTime*(0.35+uTurb), position.y*9.0, 1.7))-0.5)*0.05*h*amp;
-      p.z += (noise3(vec3(uTime*(0.3+uTurb)+7.0, position.y*12.0, 3.1))-0.5)*0.03*h*amp;
+      float h=smoothstep(0.,1.,uv.y); float amp=1.0+uTurb*1.2;
+      // one slow coherent sway travelling UP the column (a wave, not per-point jitter), plus a little large-scale drift
+      p.x += sin(uTime*0.8 - uv.y*5.0)*0.010*h*h*amp + (noise3(vec3(uTime*0.18, uv.y*2.2, 1.7))-0.5)*0.05*h*amp;
+      p.z += sin(uTime*0.6 - uv.y*4.0 + 1.3)*0.006*h*h + (noise3(vec3(uTime*0.15+7.0, uv.y*2.5, 3.1))-0.5)*0.03*h;
       p.x += uWind.x*h*h*0.22; p.z += uWind.y*h*h*0.22;                                    // inertia lean: the vapor lags behind the device
       vec4 mv=modelViewMatrix*vec4(p,1.); vView=normalize(-mv.xyz); gl_Position=projectionMatrix*mv; }`;
   const frag = `${GLSL_NOISE}
@@ -178,8 +179,8 @@ function buildMist(group) {
       float h=vUv.y;
       float n=fbm3(vec3(vUv.x*4.5, vUv.y*2.6-uTime*0.55, uTime*0.16));                   // rising, vertically-stretched structure
       float n2=fbm3(vec3(vUv.x*11.0+3.0, vUv.y*5.5-uTime*1.1, uTime*0.28));              // fine ragged filaments
-      float edge=abs(vUv.x-0.5)+(n-0.5)*0.28*(0.35+h)+(n2-0.5)*0.10*h;
-      float widthMask=1.0-smoothstep(0.22+0.10*h, 0.40+0.08*h, edge);                     // ragged ribbon, widening as it rises
+      float edge=abs(vUv.x-0.5)+(n-0.5)*0.22*(0.35+h)+(n2-0.5)*0.08*h;
+      float widthMask=1.0-smoothstep(0.25+0.06*h, 0.36+0.08*h, edge);                     // base just inside the slot, spreading as it rises
       float body=pow(0.35+0.65*n,1.8)*(0.6+0.4*n2);
       float top=0.55+0.35*(n-0.5)+0.15*(n2-0.5);                                          // per-column ragged top, never a straight edge
       float density=widthMask*body*(1.0-smoothstep(top-0.35,top+0.12,h))*smoothstep(0.0,0.05,h);
@@ -212,15 +213,18 @@ function buildClock(group, winW, winH, winY) {
   const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8; tex.minFilter = THREE.LinearMipmapLinearFilter; tex.generateMipmaps = true;
   const h = winH * 0.84, w = h * (2048 / 640);                                            // digits span ~84% of the window height
   const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, color: new THREE.Color(1.55, 1.0, 0.5) });
-  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat); mesh.position.set(0, winY + winH * 0.02, DEV.D / 2 - 0.012); mesh.renderOrder = 5; group.add(mesh);
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat); mesh.position.set(0, winY + winH * 0.02, DEV.D / 2 - 0.0015); mesh.renderOrder = 20; group.add(mesh);   // just in front of the glass: no reflections over the digits
   const bleed = { material: new THREE.MeshBasicMaterial() };                                   // (no duplicate glow plane: it doubled the edges)
   let last = '';
-  function set(text, ghost, hex) {
-    if (text === last) return; last = text;
+  function set(text, suffix, hex) {
+    const key = text + '|' + suffix; if (key === last) return; last = key;
     x.clearRect(0, 0, c.width, c.height); x.textAlign = 'center'; x.textBaseline = 'middle';
-    const fs = text.length > 5 ? 380 : 540; x.font = `700 ${fs}px 'DSEG7 Classic','DSEG7Classic','Share Tech Mono',monospace`;
-    x.fillStyle = 'rgba(255,255,255,0.06)'; x.fillText(ghost, 1024, 330);                // unlit segments
-    x.fillStyle = '#ffffff'; x.fillText(text, 1024, 330);                                 // crisp: no baked blur, bloom supplies the halo
+    const FONT = (px) => `700 ${px}px 'DSEG7 Classic','DSEG7Classic','Share Tech Mono',monospace`;
+    let fs = 540; x.font = FONT(fs); const maxW = suffix ? 1560 : 1900;                    // fit: shrink until the digits fit, leave room for AM/PM
+    while (x.measureText(text).width > maxW && fs > 200) { fs -= 20; x.font = FONT(fs); }
+    const tw = x.measureText(text).width, cx0 = suffix ? 1024 - 130 : 1024;
+    x.fillStyle = '#ffffff'; x.fillText(text, cx0, 330);                                  // crisp: no baked blur, bloom supplies the halo
+    if (suffix) { x.font = `600 120px 'Share Tech Mono','Sora',monospace`; x.textAlign = 'left'; x.fillText(suffix, cx0 + tw / 2 + 40, 330 - fs * 0.28); }
     tex.needsUpdate = true;
   }
   return { set, mesh, bleed, mat };
@@ -240,6 +244,7 @@ const HEAT_FRAG = `uniform float uTime; uniform vec4 uBand; uniform float uAmt;
     uv+=n*uAmt*mask; }`;
 class HeatEffect extends Effect { constructor() { super('HeatEffect', HEAT_FRAG, { uniforms: new Map([['uTime', new THREE.Uniform(0)], ['uBand', new THREE.Uniform(new THREE.Vector4(0.5, 0.5, 0.1, 0.3))], ['uAmt', new THREE.Uniform(0.016)]]) }); } }
 const RED = new THREE.Color(1, 0.22, 0.04);
+const R_ = (L) => L.p;
 export const HearthGL = (() => {
   const view = { zoom: 1, px: 0, py: 0 }; let lastW = 0, lastH = 0;
   let renderer, scene, camera, composer, bloom, heat, dev, mist, vapor, clock, room, canvas, ready = false, t0 = performance.now(), tPrev = 0, tSim = 0, land = false, plumeH = 0.22;
@@ -266,7 +271,7 @@ export const HearthGL = (() => {
   function resize(w, h) { if (!ready) return; lastW = w; lastH = h; renderer.setSize(w, h, false); composer.setSize(w, h); frame(); }
   function frame() {
     const w = lastW, h = lastH; camera.aspect = w / h; land = w > h;
-    plumeH = land ? 0.125 : 0.24; mist.uniforms.uLift.value = plumeH / 0.30;
+    plumeH = land ? 0.15 : 0.24; mist.uniforms.uLift.value = plumeH / 0.30;
     // frame: device width must fill ~88% of the view, AND device+plume must fit vertically -> take the farther distance
     const vf = THREE.MathUtils.degToRad(camera.fov), hf = 2 * Math.atan(Math.tan(vf / 2) * camera.aspect);
     const needW = DEV.W * (land ? 0.98 : 1.05), needH = (DEV.H + plumeH) * 1.0;
@@ -287,12 +292,12 @@ export const HearthGL = (() => {
     clock.hex = hexA;
   }
   // device-motion model: a wind vector (x = screen right, z = toward viewer) with spring-damper dynamics
-  const wind = { x: 0, z: 0, vx: 0, vz: 0, tx: 0, tz: 0, turb: 0, shake: 0, sx: 0, sz: 0 };
+  const wind = { x: 0, z: 0, vx: 0, vz: 0, tx: 0, tz: 0, turb: 0 };
   function motion(ax, ay, az, rx, ry, rz) {            // accelerations in m/s^2 (screen-aligned, gravity removed), rotation rates deg/s
-    const k = 0.11; wind.vx -= ax * k; wind.vz -= az * k * 0.6; wind.vx -= (rz || 0) * 0.0012;
+    const k = 0.09; wind.vx -= ax * k; wind.vz -= az * k * 0.6; wind.vx -= (rz || 0) * 0.0009;
     const j = Math.min(1, Math.hypot(ax, ay, az) / 6 + Math.hypot(rx || 0, ry || 0, rz || 0) / 400); wind.turb = Math.max(wind.turb, j);
     liftKick = Math.max(-0.35, Math.min(0.35, liftKick - ay * 0.02));
-    wind.shake = Math.min(1, wind.shake + j * 0.8); wind.sx += ax * 0.02; wind.sz += az * 0.012;   // the loose logs get knocked
+    for (const m of dev.userData.logMeshes) { const L = m.userData.rest; L.vx -= ax * 0.0022 * L.gain; L.vz -= az * 0.0014 * L.gain; L.vy += Math.max(0, -ay) * 0.0016 * L.gain; }   // impulse into each log's mass
   }
   const tiltBase = { g: null, b: null };
   function tilt(gammaDeg, betaDeg) {                    // react to CHANGES in tilt (high-passed): a swing leans the plume, holding still settles it upright
@@ -305,7 +310,7 @@ export const HearthGL = (() => {
   function render(dt, timeText, ghost, motion = 1, bass = 0) {
     if (!ready) return; tSim += dt * (0.35 + 0.65 * motion); const t = tSim;
     // integrate the wind spring (stiffness 18, damping 5.5 -> settles in ~1 s like real vapor)
-    wind.vx += ((wind.tx - wind.x) * 18 - wind.vx * 5.5) * dt; wind.vz += ((wind.tz - wind.z) * 18 - wind.vz * 5.5) * dt;
+    wind.vx += ((wind.tx - wind.x) * 12 - wind.vx * 6.5) * dt; wind.vz += ((wind.tz - wind.z) * 12 - wind.vz * 6.5) * dt;   // slow, well-damped: vapor has inertia
     wind.x += wind.vx * dt; wind.z += wind.vz * dt; wind.turb *= Math.exp(-dt * 2.2); liftKick *= Math.exp(-dt * 3);
     mist.uniforms.uWind.value.set(wind.x, wind.z); mist.uniforms.uTurb.value = wind.turb; mist.uniforms.uLift.value = (plumeH / 0.30) * (1 + liftKick);
     // 1/f flicker drives the LED brightness, its colour (dimmer = redder), and the light's position wander
@@ -317,17 +322,18 @@ export const HearthGL = (() => {
     bloom.intensity = 0.95 + 0.4 * (f - 0.78) / 0.22;
     for (const e of dev.userData.embers) e.material.emissiveIntensity = 1.4 + 2.2 * pink(t * 0.9 + e.userData.ph, 7);
     for (const m of dev.userData.logMeshes) m.material.emissiveIntensity = 2.6 + 3.4 * pink(t * 0.7 + m.userData.ph, 13);
-    // loose logs: slide with the wind/tilt, rattle on jolts, settle back (spring-damped like the vapor, but stiffer)
-    wind.sx += (-wind.sx * 26) * dt; wind.sz += (-wind.sz * 26) * dt; wind.shake *= Math.exp(-dt * 3.5);
-    for (const m of dev.userData.logMeshes) { const R = m.userData.rest, g = R.gain, sh = wind.shake * g;
-      const jx = Math.sin(t * 23 + R.ph) * sh, jy = Math.abs(Math.sin(t * 31 + R.ph * 2)) * sh, jz = Math.cos(t * 19 + R.ph) * sh;
-      m.position.set(R.p.x + (wind.x * 0.004 + wind.sx * 0.5) * g + jx * 0.003, R.p.y + jy * 0.004, R.p.z + (wind.z * 0.003 + wind.sz * 0.5) * g + jz * 0.002);
-      m.rotation.set(R.r.x + jz * 0.06 + wind.z * 0.05 * g, R.r.y + jx * 0.05, R.r.z + jx * 0.05 - wind.x * 0.06 * g); }
+    // loose logs = damped masses: an impulse sets them sliding, friction + the neighbours' resistance bring them back; they ROLL as they slide
+    for (const m of dev.userData.logMeshes) { const L = m.userData.rest;
+      L.vx += (-L.dx * 140 - L.vx * 9) * dt; L.vz += (-L.dz * 140 - L.vz * 9) * dt; L.vy += (-L.dy * 400 - L.vy * 14) * dt;   // ~2 Hz, a couple of wobbles then still
+      L.dx += L.vx * dt; L.dz += L.vz * dt; L.dy = Math.max(0, L.dy + L.vy * dt);
+      const lim = 0.006; L.dx = Math.max(-lim, Math.min(lim, L.dx)); L.dz = Math.max(-lim, Math.min(lim, L.dz));
+      m.position.set(R_(L).x + L.dx, R_(L).y + L.dy, R_(L).z + L.dz);
+      m.rotation.set(L.r.x + L.dz / L.radius * 0.35, L.r.y, L.r.z - L.dx / L.radius * 0.35); }
     // vapor particles: born at the slot, drift up slowly with lazy curl, fade out
     const V = vapor, base = mist.uniforms.uBase.value, vap = mist.uniforms.uVapor.value, tmp = new THREE.Color();
     for (let i = 0; i < V.N; i++) { V.life[i] += dt * (0.4 + 0.6 * motion);
       if (V.life[i] >= V.dur[i] || V.dur[i] === 0) { if (V.life[i] < 0) continue; V.life[i] = 0; V.dur[i] = 2.6 + Math.random() * 1.8;
-        V.pos[i * 3] = (Math.random() - 0.5) * DEV.W * 0.45; V.pos[i * 3 + 1] = DEV.H + plumeH * (0.45 + Math.random() * 0.35); V.pos[i * 3 + 2] = (Math.random() - 0.5) * 0.02;
+        V.pos[i * 3] = (Math.random() - 0.5) * DEV.W * 0.7; V.pos[i * 3 + 1] = DEV.H + plumeH * (0.45 + Math.random() * 0.35); V.pos[i * 3 + 2] = (Math.random() - 0.5) * 0.02;
         V.vel[i * 3] = (Math.random() - 0.5) * 0.01; V.vel[i * 3 + 1] = 0.05 + Math.random() * 0.04; V.vel[i * 3 + 2] = (Math.random() - 0.5) * 0.006; }
       const k = V.life[i] / V.dur[i]; if (k < 0) continue;
       V.pos[i * 3] += (V.vel[i * 3] + 0.012 * (pink(t * 0.5 + i, 11) - 0.5) + wind.x * 0.06) * dt; V.pos[i * 3 + 1] += V.vel[i * 3 + 1] * dt; V.pos[i * 3 + 2] += (V.vel[i * 3 + 2] + wind.z * 0.06) * dt;
@@ -341,7 +347,7 @@ export const HearthGL = (() => {
     clock.set(timeText, ghost, clock.hex || '#ffb347');
     // heat band: project slot centre, slot half-width and plume top into screen uv
     const P = (x, y, z) => { const v = new THREE.Vector3(x, y, z).project(camera); return [v.x * 0.5 + 0.5, v.y * 0.5 + 0.5]; };
-    const c0 = P(0, DEV.H, 0), c1 = P(DEV.W * 0.28, DEV.H, 0), c2 = P(0, DEV.H + plumeH * 1.05, 0);
+    const c0 = P(0, DEV.H, 0), c1 = P(DEV.W * 0.40, DEV.H, 0), c2 = P(0, DEV.H + plumeH * 1.05, 0);
     heat.uniforms.get('uBand').value.set(c0[0], c0[1], Math.abs(c1[0] - c0[0]), Math.max(0.01, c2[1] - c0[1]));
     heat.uniforms.get('uTime').value = t; heat.uniforms.get('uAmt').value = 0.012 + 0.007 * f;
     composer.render(dt);

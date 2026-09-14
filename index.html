@@ -1691,8 +1691,8 @@ registerTheme('hearth',{ name:'Hearth', desc:'Flame diffuser with LED clock', ki
   draw(dt){
     if(hearth3dState==='ready'){ if(gl3d.style.display!=='block'){ gl3d.style.display='block'; hearth3dSync(); }
       if(this._acc!==S.accent||this._acc2!==S.accent2){ this._acc=S.accent; this._acc2=S.accent2; window.HearthGL.setColors(S.accent,S.accent2); }
-      bgx.clearRect(0,0,state.w,state.h); const T=timeStr(); const txt=T.text+(S.fmt==='12'?T.suffix:'');
-      window.HearthGL.render(Math.min(0.05,dt||0.016), txt, T.text.replace(/\d/g,'8'), MO(), state.audio.bass); return; }
+      bgx.clearRect(0,0,state.w,state.h); const T=timeStr();
+      window.HearthGL.render(Math.min(0.05,dt||0.016), T.text, S.fmt==='12'?T.suffix.trim():'', MO(), state.audio.bass); return; }
     drawHearth(dt); } });
 registerTheme('neon',{ name:'Neon', desc:'Glowing tube numerals', kind:'dom',
   draw(){ const g=0.6+state.audio.bass*1.5; if(Math.abs(g-(this._g||0))>0.05){ this._g=g; $('#layer-neon').style.setProperty('--glow',g.toFixed(2)); } }
