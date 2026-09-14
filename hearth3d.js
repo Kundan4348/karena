@@ -122,7 +122,8 @@ function buildDevice(scene, env) {
   const logs = [ [0.084, 0.0115, -0.048, 0.013, -0.016, 0.05, 0.10], [0.076, 0.0108, 0.044, 0.012, 0.012, -0.06, 0.02],
                  [0.094, 0.0100, -0.004, 0.031, -0.008, 0.28, 0.18], [0.058, 0.0095, -0.060, 0.027, 0.014, 0.02, -0.14], [0.068, 0.0102, 0.058, 0.028, 0.012, -0.05, 0.12] ];
   const yBase = winBottom + 0.003; let li = 0;
-  for (const [len, r, x, y, z, rz, ry] of logs) { const m = makeLog(len, r, ctex, ++li); m.rotation.set(0, ry, rz); m.position.set(x, yBase + y, z); g.add(m); logMeshes.push(m); }
+  for (const [len, r, x, y, z, rz, ry] of logs) { const m = makeLog(len, r, ctex, ++li); m.rotation.set(0, ry, rz); m.position.set(x, yBase + y, z);
+    m.userData.rest = { p: m.position.clone(), r: m.rotation.clone(), gain: 0.6 + Math.random() * 0.8, ph: Math.random() * 6.28 }; g.add(m); logMeshes.push(m); }
   // ash & ember chunks on the bed
   const chunkMat = new THREE.MeshStandardMaterial({ map: ctex.map, color: 0xbdb5ad, roughness: 1, emissiveMap: ctex.em, emissive: new THREE.Color(0xff4a10), emissiveIntensity: 0.8 });
   for (let i = 0; i < 26; i++) { const m = new THREE.Mesh(new THREE.DodecahedronGeometry(0.0025 + Math.random() * 0.0035, 0), chunkMat);
@@ -240,6 +241,7 @@ const HEAT_FRAG = `uniform float uTime; uniform vec4 uBand; uniform float uAmt;
 class HeatEffect extends Effect { constructor() { super('HeatEffect', HEAT_FRAG, { uniforms: new Map([['uTime', new THREE.Uniform(0)], ['uBand', new THREE.Uniform(new THREE.Vector4(0.5, 0.5, 0.1, 0.3))], ['uAmt', new THREE.Uniform(0.016)]]) }); } }
 const RED = new THREE.Color(1, 0.22, 0.04);
 export const HearthGL = (() => {
+  const view = { zoom: 1, px: 0, py: 0 }; let lastW = 0, lastH = 0;
   let renderer, scene, camera, composer, bloom, heat, dev, mist, vapor, clock, room, canvas, ready = false, t0 = performance.now(), tPrev = 0, tSim = 0, land = false, plumeH = 0.22;
   function init(el) {
     canvas = el;
@@ -260,16 +262,20 @@ export const HearthGL = (() => {
     composer.addPass(new EffectPass(camera, heat, bloom, grain, new VignetteEffect({ offset: 0.33, darkness: 0.58 }), new ToneMappingEffect({ mode: ToneMappingMode.ACES_FILMIC })));
     ready = true; return true;
   }
-  function resize(w, h) {
-    if (!ready) return; renderer.setSize(w, h, false); composer.setSize(w, h); camera.aspect = w / h; land = w > h;
+  function setView(zoom, px, py) { view.zoom = THREE.MathUtils.clamp(zoom, 0.5, 3); view.px = THREE.MathUtils.clamp(px, -1, 1); view.py = THREE.MathUtils.clamp(py, -1, 1); if (ready) frame(); return { ...view }; }
+  function resize(w, h) { if (!ready) return; lastW = w; lastH = h; renderer.setSize(w, h, false); composer.setSize(w, h); frame(); }
+  function frame() {
+    const w = lastW, h = lastH; camera.aspect = w / h; land = w > h;
     plumeH = land ? 0.125 : 0.24; mist.uniforms.uLift.value = plumeH / 0.30;
     // frame: device width must fill ~88% of the view, AND device+plume must fit vertically -> take the farther distance
     const vf = THREE.MathUtils.degToRad(camera.fov), hf = 2 * Math.atan(Math.tan(vf / 2) * camera.aspect);
     const needW = DEV.W * (land ? 0.98 : 1.05), needH = (DEV.H + plumeH) * 1.0;
     // fit is measured at the device's FRONT face (nearest point), not its centre, so nothing crops
     const dist = DEV.D / 2 + Math.max(needW / 2 / Math.tan(hf / 2), needH / 2 / Math.tan(vf / 2));
-    const cy = (DEV.H + plumeH) * 0.46;
-    camera.position.set(0.012, cy + dist * 0.07, dist); camera.lookAt(0.004, cy - 0.004, 0); camera.updateProjectionMatrix();
+    const cy = (DEV.H + plumeH) * 0.46, d = dist / view.zoom;
+    // pan: view.px/py are fractions of the visible half-extent at the device -> the box moves, the simulation does not
+    const halfH = Math.tan(vf / 2) * d, halfW = halfH * camera.aspect, ox = -view.px * halfW, oy = -view.py * halfH;
+    camera.position.set(0.012 + ox, cy + d * 0.07 + oy, d); camera.lookAt(0.004 + ox, cy - 0.004 + oy, 0); camera.updateProjectionMatrix(); camera.userData.dx = camera.userData.dy = 0;
     vapor.pts.material.uniforms.uScale.value = h * 0.9 * renderer.getPixelRatio();
   }
   function setColors(hexA, hexB) {
@@ -281,11 +287,12 @@ export const HearthGL = (() => {
     clock.hex = hexA;
   }
   // device-motion model: a wind vector (x = screen right, z = toward viewer) with spring-damper dynamics
-  const wind = { x: 0, z: 0, vx: 0, vz: 0, tx: 0, tz: 0, turb: 0 };
+  const wind = { x: 0, z: 0, vx: 0, vz: 0, tx: 0, tz: 0, turb: 0, shake: 0, sx: 0, sz: 0 };
   function motion(ax, ay, az, rx, ry, rz) {            // accelerations in m/s^2 (screen-aligned, gravity removed), rotation rates deg/s
     const k = 0.11; wind.vx -= ax * k; wind.vz -= az * k * 0.6; wind.vx -= (rz || 0) * 0.0012;
     const j = Math.min(1, Math.hypot(ax, ay, az) / 6 + Math.hypot(rx || 0, ry || 0, rz || 0) / 400); wind.turb = Math.max(wind.turb, j);
     liftKick = Math.max(-0.35, Math.min(0.35, liftKick - ay * 0.02));
+    wind.shake = Math.min(1, wind.shake + j * 0.8); wind.sx += ax * 0.02; wind.sz += az * 0.012;   // the loose logs get knocked
   }
   const tiltBase = { g: null, b: null };
   function tilt(gammaDeg, betaDeg) {                    // react to CHANGES in tilt (high-passed): a swing leans the plume, holding still settles it upright
@@ -310,6 +317,12 @@ export const HearthGL = (() => {
     bloom.intensity = 0.95 + 0.4 * (f - 0.78) / 0.22;
     for (const e of dev.userData.embers) e.material.emissiveIntensity = 1.4 + 2.2 * pink(t * 0.9 + e.userData.ph, 7);
     for (const m of dev.userData.logMeshes) m.material.emissiveIntensity = 2.6 + 3.4 * pink(t * 0.7 + m.userData.ph, 13);
+    // loose logs: slide with the wind/tilt, rattle on jolts, settle back (spring-damped like the vapor, but stiffer)
+    wind.sx += (-wind.sx * 26) * dt; wind.sz += (-wind.sz * 26) * dt; wind.shake *= Math.exp(-dt * 3.5);
+    for (const m of dev.userData.logMeshes) { const R = m.userData.rest, g = R.gain, sh = wind.shake * g;
+      const jx = Math.sin(t * 23 + R.ph) * sh, jy = Math.abs(Math.sin(t * 31 + R.ph * 2)) * sh, jz = Math.cos(t * 19 + R.ph) * sh;
+      m.position.set(R.p.x + (wind.x * 0.004 + wind.sx * 0.5) * g + jx * 0.003, R.p.y + jy * 0.004, R.p.z + (wind.z * 0.003 + wind.sz * 0.5) * g + jz * 0.002);
+      m.rotation.set(R.r.x + jz * 0.06 + wind.z * 0.05 * g, R.r.y + jx * 0.05, R.r.z + jx * 0.05 - wind.x * 0.06 * g); }
     // vapor particles: born at the slot, drift up slowly with lazy curl, fade out
     const V = vapor, base = mist.uniforms.uBase.value, vap = mist.uniforms.uVapor.value, tmp = new THREE.Color();
     for (let i = 0; i < V.N; i++) { V.life[i] += dt * (0.4 + 0.6 * motion);
@@ -333,6 +346,6 @@ export const HearthGL = (() => {
     heat.uniforms.get('uTime').value = t; heat.uniforms.get('uAmt').value = 0.012 + 0.007 * f;
     composer.render(dt);
   }
-  return { init, resize, setColors, render, motion, tilt, get ready() { return ready; } };
+  return { init, resize, setColors, render, motion, tilt, setView, getView: () => ({ ...view }), get ready() { return ready; } };
 })();
 window.HearthGL = HearthGL;

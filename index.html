@@ -107,6 +107,9 @@ body.secs #layer-bold .d.secs-only{ display:inline-block; }
 body.secs #layer-bold .bd{ font-size:min(22vw,30vh); }
 @media (orientation:landscape){ body.secs #layer-bold .bd{ font-size:min(15vw,42vh);} }
 
+#settings .btn{ font:inherit; font-size:13px; padding:8px 14px; border-radius:10px; border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.08); color:inherit; cursor:pointer; }
+#settings .btn:active{ background:rgba(255,255,255,.16); }
+
 /* ================= CALM (Serene / Haze) — soothing Bold + diffuser glow ================= */
 .calm-wrap{ display:flex; align-items:center; justify-content:center; }
 .calm-in{ display:flex; align-items:center; justify-content:center; animation:calmBreath 7s ease-in-out infinite; will-change:transform; }
@@ -571,6 +574,11 @@ body.calm #layer-bold .d{ transition:transform .5s cubic-bezier(.22,1,.36,1); }
       <div class="row"><div class="lbl">Auto night dimming<small>Dims + warms after sunset</small></div><div class="tg on" id="tg-night"></div></div>
       <div class="row"><div class="lbl">Burn-in drift<small>Slowly nudges pixels (OLED safe)</small></div><div class="tg on" id="tg-drift"></div></div>
 
+      <div class="sect">Hearth (3D diffuser)</div>
+      <div class="row"><div class="lbl">Phone motion<small id="hm-status">Vapor and logs react when you move the phone</small></div><button class="btn" id="hm-enable">Enable</button></div>
+      <div class="row"><div class="lbl">Zoom<small>Or pinch on screen · drag vertically / two fingers to move the box</small></div><input type="range" min="50" max="300" value="100" class="bright" id="hz-zoom" /></div>
+      <div class="row"><div class="lbl">View position</div><button class="btn" id="hz-reset">Reset view</button></div>
+
       <div class="sect">Clock / accent color</div>
       <div id="swatches"></div>
       <div class="row"><div class="lbl">Custom color</div><input type="color" id="customcol" value="#6ad5ff" style="width:52px;height:34px;border:none;border-radius:8px;background:none;pointer-events:auto;cursor:pointer" /></div>
@@ -607,7 +615,7 @@ const DEFAULTS={
   mic:false, audio:false, weather:false, wfx:true,
   wake:true, night:true, drift:true,
   accent:'#6ad5ff', accent2:'#b892ff', accentAuto:true,
-  bg:'auto', font:'Poppins', numColor:'default', brightness:100, motion:'calm'
+  bg:'auto', font:'Poppins', numColor:'default', brightness:100, motion:'calm', motionSensor:false, hearthView:{zoom:1,px:0,py:0}
 };
 let S=Object.assign({},DEFAULTS);
 try{ const saved=JSON.parse(localStorage.getItem('lumina')||'{}'); Object.assign(S,saved);
@@ -1646,25 +1654,36 @@ registerTheme('serene',{ name:'Serene', desc:'Soothing two-tone, dusk diffuser',
 const gl3d=$('#gl3d'); let hearth3dState='idle';   // idle | loading | ready | failed
 function hearth3dLoad(){ if(hearth3dState!=='idle') return; hearth3dState='loading';
   const test=document.createElement('canvas'); if(!test.getContext('webgl2')){ hearth3dState='failed'; return; }
-  import('./hearth3d.js').then(()=>{ try{ window.HearthGL.init(gl3d); hearth3dSync(); hearth3dState='ready'; hearthMotionHook(); }catch(e){ console.warn('hearth3d init failed',e); hearth3dState='failed'; } })
+  import('./hearth3d.js').then(()=>{ try{ window.HearthGL.init(gl3d); hearth3dSync(); hearth3dState='ready'; if(S.motionSensor) hearthMotionEnable(false); }catch(e){ console.warn('hearth3d init failed',e); hearth3dState='failed'; } })
     .catch(e=>{ console.warn('hearth3d load failed',e); hearth3dState='failed'; }); }
-/* phone motion -> the vapor: iOS needs a permission prompt from a tap; Android/desktop just attach */
-let hearthMotionHooked=false;
-function hearthMotionHook(){ if(hearthMotionHooked) return; hearthMotionHooked=true;
+/* phone motion -> the vapor + logs. iOS only grants sensor access from a tap via requestPermission() (and may silently deny in a
+   home-screen PWA), so this is an explicit Settings button with visible status; Android / desktop attach directly. */
+let hearthMotionHooked=false, hmEvents=0, hmLast=0;
+function hmStatus(txt){ const el=$('#hm-status'); if(el) el.textContent=txt; }
+function hearthMotionAttach(){ if(hearthMotionHooked) return; hearthMotionHooked=true;
   const live=()=>hearth3dState==='ready'&&activeTheme&&activeTheme.id==='hearth'&&window.HearthGL;
   const ang=()=>{ const a=(screen.orientation&&typeof screen.orientation.angle==='number')?screen.orientation.angle:(window.orientation||0); return ((a%360)+360)%360; };
-  const onMotion=(e)=>{ if(!live()) return; const a=e.acceleration||{}, r=e.rotationRate||{}; let ax=a.x||0, ay=a.y||0; const o=ang();
+  addEventListener('devicemotion',(e)=>{ hmEvents++; hmLast=Date.now(); if(!live()) return; const a=e.acceleration||{}, r=e.rotationRate||{}; let ax=a.x||0, ay=a.y||0; const o=ang();
     if(o===90){ [ax,ay]=[-ay,ax]; } else if(o===270){ [ax,ay]=[ay,-ax]; } else if(o===180){ ax=-ax; ay=-ay; }
-    window.HearthGL.motion(ax,ay,a.z||0,r.beta||0,r.gamma||0,r.alpha||0); };
-  const onOrient=(e)=>{ if(!live()) return; let g=e.gamma||0, b=e.beta||0; const o=ang();
-    if(o===90){ [g,b]=[b,-g]; } else if(o===270){ [g,b]=[-b,g]; } window.HearthGL.tilt(g,b); };
-  const start=()=>{ addEventListener('devicemotion',onMotion,{passive:true}); addEventListener('deviceorientation',onOrient,{passive:true}); };
-  const needsAsk=typeof DeviceMotionEvent!=='undefined'&&typeof DeviceMotionEvent.requestPermission==='function';
-  if(needsAsk){ const ask=()=>{ Promise.allSettled([DeviceMotionEvent.requestPermission(), (typeof DeviceOrientationEvent!=='undefined'&&DeviceOrientationEvent.requestPermission)?DeviceOrientationEvent.requestPermission():Promise.resolve('granted')])
-      .then(rs=>{ if(rs.some(r=>r.status==='fulfilled'&&r.value==='granted')) start(); }); };
-    addEventListener('pointerdown',ask,{once:true}); }
-  else start(); }
-function hearth3dSync(){ if(!window.HearthGL||!window.HearthGL.ready) return; window.HearthGL.resize(state.w,state.h); window.HearthGL.setColors(S.accent,S.accent2); }
+    window.HearthGL.motion(ax,ay,a.z||0,r.beta||0,r.gamma||0,r.alpha||0); },{passive:true});
+  addEventListener('deviceorientation',(e)=>{ if(!live()) return; let g=e.gamma||0, b=e.beta||0; const o=ang();
+    if(o===90){ [g,b]=[b,-g]; } else if(o===270){ [g,b]=[-b,g]; } window.HearthGL.tilt(g,b); },{passive:true});
+  setInterval(()=>{ const btn=$('#hm-enable'); if(!btn) return; if(hmEvents>0){ btn.textContent='On'; hmStatus(Date.now()-hmLast<2000?`Listening · ${hmEvents} motion events`:'Enabled · move the phone to see it react'); } },1000); }
+function hearthMotionEnable(fromGesture){
+  if(typeof DeviceMotionEvent==='undefined'){ hmStatus('This device has no motion sensors'); return; }
+  const needsAsk=typeof DeviceMotionEvent.requestPermission==='function';
+  if(!needsAsk){ hearthMotionAttach(); S.motionSensor=true; save(); hmStatus('Enabled'); return; }
+  if(!fromGesture) return;                       // iOS: only a tap may ask
+  Promise.allSettled([DeviceMotionEvent.requestPermission(), (typeof DeviceOrientationEvent!=='undefined'&&DeviceOrientationEvent.requestPermission)?DeviceOrientationEvent.requestPermission():Promise.resolve('granted')])
+    .then(rs=>{ const ok=rs[0].status==='fulfilled'&&rs[0].value==='granted';
+      if(ok){ hearthMotionAttach(); S.motionSensor=true; save(); hmStatus('Enabled · move the phone'); }
+      else hmStatus('Denied. iOS: Settings → Safari → Motion & Orientation Access, or remove and re-add the app to Home Screen, then tap Enable again'); })
+    .catch(()=>hmStatus('Permission request failed — tap Enable again'));
+}
+// re-arm quietly on later launches: iOS still needs a gesture, so use the first tap once the user has opted in
+if(S.motionSensor){ addEventListener('pointerdown',()=>hearthMotionEnable(true),{once:true}); }
+function hearth3dSync(){ if(!window.HearthGL||!window.HearthGL.ready) return; const v=S.hearthView||{zoom:1,px:0,py:0}; window.HearthGL.setView(v.zoom,v.px,v.py); window.HearthGL.resize(state.w,state.h); window.HearthGL.setColors(S.accent,S.accent2); }
+function hearthViewSet(zoom,px,py){ if(!window.HearthGL||!window.HearthGL.ready) return; S.hearthView=window.HearthGL.setView(zoom,px,py); save(); const z=$('#hz-zoom'); if(z) z.value=Math.round(S.hearthView.zoom*100); }
 registerTheme('hearth',{ name:'Hearth', desc:'Flame diffuser with LED clock', kind:'canvas',
   init(){ flames=[]; mist=[]; sparks=[]; plumeFire.a.fill(0); hearthFire.a.fill(0); hearth3dLoad(); if(hearth3dState==='ready'){ hearth3dSync(); gl3d.style.display='block'; } $('#weatherfx').style.visibility='hidden'; },   // indoor scene: no stars/rain overlay
   layout(){ hearth3dSync(); },
@@ -2054,6 +2073,7 @@ function refreshUI(){
   setSeg('#unit-ctrl',S.unit,'unit'); setSeg('#fmt-ctrl',S.fmt,'fmt'); setSeg('#num-ctrl',S.numColor,'num'); setSeg('#motion-ctrl',S.motion,'motion');
   const cc=$('#customcol'); if(cc) cc.value=S.accent;
   const br=$('#bright'); if(br) br.value=S.brightness||100;
+  const hz=$('#hz-zoom'); if(hz) hz.value=Math.round(((S.hearthView||{zoom:1}).zoom)*100); if(S.motionSensor){ const b=$('#hm-enable'); if(b) b.textContent='On'; }
 }
 
 /* toggle handlers */
@@ -2085,6 +2105,9 @@ $('#tg-weather').addEventListener('click',async()=>{
 });
 function noteAudio(m){ $('#audio-note').textContent=m||''; }
 $('#bright').addEventListener('input',e=>{ S.brightness=+e.target.value; applyDim(); save(); });
+$('#hm-enable').addEventListener('click',()=>hearthMotionEnable(true));
+$('#hz-zoom').addEventListener('input',e=>{ const v=(S.hearthView||{px:0,py:0}); hearthViewSet(+e.target.value/100, v.px, v.py); });
+$('#hz-reset').addEventListener('click',()=>hearthViewSet(1,0,0));
 
 /* segmented controls */
 $('#unit-ctrl').addEventListener('click',e=>{ if(e.target.dataset.unit){ S.unit=e.target.dataset.unit; setSeg('#unit-ctrl',S.unit,'unit'); save(); Weather.renderChip(); } });
@@ -2108,15 +2131,26 @@ $('#btn-audio').addEventListener('click',()=>{ // quick toggle: mic first, else 
    GESTURES — swipe faces, tap toggles chrome
    ========================================================= */
 let sx=0,sy=0,st=0,moved=false;
-addEventListener('pointerdown',e=>{ if($('#settings').classList.contains('open'))return; sx=e.clientX; sy=e.clientY; st=Date.now(); moved=false; });
-addEventListener('pointermove',e=>{ if(Math.abs(e.clientX-sx)>10||Math.abs(e.clientY-sy)>10) moved=true; });
-addEventListener('pointerup',e=>{
+/* Hearth 3D view gestures: pinch = zoom, two-finger drag = move, one-finger VERTICAL drag = move up/down (horizontal swipe still changes face) */
+const ptrs=new Map(); let pinch=null, panned=false, panLast=0;
+const hearthLive=()=>hearth3dState==='ready'&&activeTheme&&activeTheme.id==='hearth'&&window.HearthGL;
+addEventListener('pointerdown',e=>{ if($('#settings').classList.contains('open'))return; sx=e.clientX; sy=e.clientY; st=Date.now(); moved=false; panned=false; panLast=0;
+  if(hearthLive()){ ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); if(ptrs.size===2){ const [a,b]=[...ptrs.values()]; pinch={d:Math.hypot(a.x-b.x,a.y-b.y), cx:(a.x+b.x)/2, cy:(a.y+b.y)/2, view:window.HearthGL.getView()}; } } });
+addEventListener('pointermove',e=>{ if(Math.abs(e.clientX-sx)>10||Math.abs(e.clientY-sy)>10) moved=true;
+  if(!hearthLive()||!ptrs.has(e.pointerId)) return; ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(ptrs.size===2&&pinch){ const [a,b]=[...ptrs.values()]; const d=Math.hypot(a.x-b.x,a.y-b.y), cx=(a.x+b.x)/2, cy=(a.y+b.y)/2;
+    hearthViewSet(pinch.view.zoom*d/pinch.d, pinch.view.px+(cx-pinch.cx)/state.w*2, pinch.view.py-(cy-pinch.cy)/state.h*2); panned=true; }
+  else if(ptrs.size===1){ const dx=e.clientX-sx, dy=e.clientY-sy; if(panned||(Math.abs(dy)>14&&Math.abs(dy)>Math.abs(dx)*1.2)){ const v=window.HearthGL.getView(); hearthViewSet(v.zoom, v.px, v.py-(dy-panLast)/state.h*2); panned=true; } panLast=dy; } });
+addEventListener('pointerup',e=>{ ptrs.delete(e.pointerId); if(ptrs.size<2) pinch=null;
   if($('#settings').classList.contains('open'))return;
   if(e.target.closest('#toolbar'))return;
   const dx=e.clientX-sx, dy=e.clientY-sy, dtm=Date.now()-st;
+  if(panned){ if(ptrs.size===0) panned=false; return; }
   if(Math.abs(dx)>60 && Math.abs(dx)>Math.abs(dy)){ cycleTheme(dx<0?1:-1); }
   else if(!moved && dtm<300){ toggleChrome(); }
 });
+addEventListener('pointercancel',e=>{ ptrs.delete(e.pointerId); if(ptrs.size<2) pinch=null; });
+addEventListener('wheel',e=>{ if(!hearthLive()) return; const v=window.HearthGL.getView(); hearthViewSet(v.zoom*(e.deltaY<0?1.08:0.925), v.px, v.py); },{passive:true});
 let chromeTimer=null;
 function toggleChrome(){ document.body.classList.toggle('chrome-hidden'); armChromeHide(); }
 function armChromeHide(){ clearTimeout(chromeTimer); if(!document.body.classList.contains('chrome-hidden'))
