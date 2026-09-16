@@ -1,0 +1,3 @@
+Models and textures in this folder are CC0 (public domain) from Poly Haven (https://polyhaven.com):
+coast_rocks_05, sand_rocks_small_01, lambis_shell, coral_ground_02, aerial_sand.
+Meshes were decimated and compressed (meshopt) for the web.

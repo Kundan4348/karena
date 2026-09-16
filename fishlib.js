@@ -34,6 +34,8 @@ export function flexInject(mat, kind, ctrl, extra) {
     Object.assign(sh.uniforms, { uT, uAmp: ctrl.amp, uFreq: ctrl.freq, uBend: ctrl.bend, uLen: ctrl.len, uFlut: ctrl.flut, uPhase: { value: extra.phase || 0 }, uRootX: { value: extra.rootX || 0 } });
     const code = kind === 'body'
       ? `transformed.z += spineZ(position.x);`
+      : kind === 'rigid'
+        ? `transformed.z += spineZ(uRootX);`
       : kind === 'fin'
         ? `transformed.z += spineZ(uRootX + position.x)
                         + sin(uv.x * 7.0 + uv.y * 5.0 - uT * uFreq * 0.9 + uPhase) * uv.y * uv.y * uLen * 0.02 * uFlut;`
@@ -47,7 +49,7 @@ export function makeCtrl(L) { return { amp: { value: 0.5 }, freq: { value: 6 }, 
 
 /* ---------- geometry ---------- */
 export function fishBody(L, prof) {
-  const NU = 40, NA = 22, pos = [], uvs = [], idx = [];
+  const NU = 72, NA = 32, pos = [], uvs = [], idx = [];
   for (let i = 0; i <= NU; i++) { const u = i / NU, x = (0.5 - u) * L, top = prof.top(u) * L, bot = prof.bot(u) * L, w = prof.wid(u) * L;
     for (let j = 0; j <= NA; j++) { const a = j / NA * Math.PI * 2, cy = Math.cos(a), sz = Math.sin(a);
       const y = cy > 0 ? Math.pow(cy, 0.8) * top : -Math.pow(-cy, 0.9) * bot; pos.push(x, y, sz * w * (1 - 0.2 * cy * cy)); uvs.push(u, j / NA); } }
@@ -81,26 +83,29 @@ export function plainFinAlpha() { if (_plainFin) return _plainFin; const a = doc
 
 /* skin painter: u along the body (0 nose -> 1 tail), v around (0/1 back, .5 belly). kinds: betta, tetra, clown, tang, chromis */
 export function bodyTexture(kind, hexBody, hexEdge) {
-  const W = 512, H = 256, c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
+  const W = 1024, H = 512, c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
   const dorsal = (v) => Math.pow(Math.abs(Math.cos(v * Math.PI)), 3);
   const img = x.createImageData(W, H), d = img.data, col = new THREE.Color();
   const base = new THREE.Color(hexBody || 0xffffff), dark = new THREE.Color(hexBody || 0xffffff).multiplyScalar(0.35), belly = new THREE.Color(0xf2f4f6), edgeC = new THREE.Color(hexEdge || hexBody || 0xffffff);
   const C_SIL = new THREE.Color(0xc9d4dc), C_BACK = new THREE.Color(0x5b6b74), C_NEON = new THREE.Color(0x35d8ff), C_RED = new THREE.Color(0xe8281c);
   const C_ORANGE = new THREE.Color(0xff7a1a), C_ORANGE_D = new THREE.Color(0xc2480a), C_WHITE = new THREE.Color(0xf6f6f2), C_BLACK = new THREE.Color(0x141210);
-  const C_YEL = new THREE.Color(0xffd21f), C_YEL_D = new THREE.Color(0xd9a10a), C_CHR = new THREE.Color(0x3fd3c8), C_CHR_D = new THREE.Color(0x1a7f8c);
+  const C_YEL = new THREE.Color(0xffd83a), C_YEL_D = new THREE.Color(0xe8b214), C_CHR = new THREE.Color(0x86ecd8), C_CHR_D = new THREE.Color(0x3aa8a6);
   for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) { const u = i / W, v = j / H, dz = dorsal(v), flank = Math.pow(Math.abs(Math.sin(v * Math.PI)), 1.5);
     if (kind === 'tetra') { col.copy(C_SIL).lerp(C_BACK, dz * 0.9); const stripe = Math.exp(-Math.pow((Math.abs(v - 0.5) - 0.27) / 0.045, 2)) * sstep(0.08, 0.2, u) * (1 - sstep(0.88, 0.98, u));
       col.lerp(C_NEON, stripe); const red = sstep(0.42, 0.6, u) * (1 - sstep(0.9, 1, u)) * Math.max(0, 1 - Math.abs(Math.abs(v - 0.5) - 0.13) / 0.12); col.lerp(C_RED, red * 0.9); }
-    else if (kind === 'clown') { col.copy(C_ORANGE).lerp(C_ORANGE_D, dz * 0.5);
+    else if (kind === 'clown') { col.copy(C_ORANGE).lerp(C_ORANGE_D, dz * 0.5); col.lerp(C_BLACK, Math.pow(dz, 10) * 0.5 * sstep(0.25, 0.4, u));
       // three white bands with thin black outlines: head, mid (bulging forward), tail root
       const band = (cu, w) => { const dd = Math.abs(u - cu) / w; return { w: 1 - sstep(0.7, 1.0, dd), k: sstep(0.7, 1.0, dd) * (1 - sstep(1.0, 1.25, dd)) }; };
       const b1 = band(0.2, 0.05), b2 = band(0.5 + (1 - flank) * 0.04, 0.06), b3 = band(0.86, 0.04); const wsum = Math.min(1, b1.w + b2.w + b3.w), ksum = Math.min(1, b1.k + b2.k + b3.k);
       col.lerp(C_WHITE, wsum); col.lerp(C_BLACK, ksum * 0.85); }
-    else if (kind === 'tang') { col.copy(C_YEL).lerp(C_YEL_D, dz * 0.55 + (1 - sstep(0.02, 0.2, u)) * 0.2); const sc = 0.5 + 0.5 * Math.sin(u * 120) * Math.sin(v * 80); col.multiplyScalar(0.96 + 0.06 * sc); }
-    else if (kind === 'chromis') { col.copy(C_CHR).lerp(C_CHR_D, dz * 0.8).lerp(belly, Math.pow(flank, 5) * 0.25); const sc = 0.5 + 0.5 * Math.sin(u * 140) * Math.sin(v * 90); col.multiplyScalar(0.94 + 0.1 * sc); }
+    else if (kind === 'tang') { col.copy(C_YEL).lerp(C_YEL_D, dz * 0.45 + (1 - sstep(0.02, 0.2, u)) * 0.15); const ll = Math.exp(-Math.pow((Math.abs(v - 0.5) - 0.11) / 0.014, 2)) * sstep(0.2, 0.4, u) * (1 - sstep(0.82, 0.95, u)); col.lerp(C_WHITE, ll * 0.22); }
+    else if (kind === 'chromis') { col.copy(C_CHR).lerp(C_CHR_D, dz * 0.6).lerp(belly, Math.pow(flank, 5) * 0.3); }
     else { col.copy(base).lerp(edgeC, sstep(0.45, 0.95, u) * 0.7 * (1 - dz * 0.5)).lerp(dark, dz * 0.6 + (1 - sstep(0.05, 0.3, u)) * 0.3).lerp(belly, Math.pow(flank, 4) * 0.2);
       const sc = 0.5 + 0.5 * Math.sin(u * 90 + Math.sin(v * 60) * 2) * Math.sin(v * 70 + u * 30); col.multiplyScalar(0.94 + 0.12 * sc); }
-    for (const ev of [0.26, 0.74]) { const de = Math.hypot((u - 0.13) * 2, (v - ev) * 1.0); if (de < 0.028) col.set(0x0a0a0c); else if (de < 0.04) col.set(kind === 'clown' ? 0xffb066 : 0xd7b46a).lerp(col, (de - 0.028) / 0.012); }
+    // scales: two skewed lattices, stronger toward the tail and flanks; a fine grain on top
+    const scl = Math.sin(u * 260 + Math.sin(v * 160) * 1.1) * Math.sin(v * 160 + u * 40); col.multiplyScalar(1 + 0.045 * scl * (0.4 + 0.6 * flank) * sstep(0.12, 0.3, u) + 0.02 * (Math.random() - 0.5));
+    if (u < 0.014 && Math.abs(v - 0.5) < 0.06) col.multiplyScalar(0.45 + 8 * u);                  // mouth
+    if (false) for (const ev of [0.26, 0.74]) { const de = Math.hypot((u - 0.13) * 2, (v - ev) * 1.0); if (de < 0.028) col.set(0x0a0a0c); else if (de < 0.04) col.set(0xd7b46a).lerp(col, (de - 0.028) / 0.012); }
     const gill = Math.exp(-Math.pow((u - 0.22 - Math.abs(v - 0.5) * 0.06) / 0.008, 2)) * flank; col.multiplyScalar(1 - gill * 0.35);
     const k = (j * W + i) * 4; d[k] = col.r * 255; d[k + 1] = col.g * 255; d[k + 2] = col.b * 255; d[k + 3] = 255; }
   x.putImageData(img, 0, 0); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
@@ -111,7 +116,7 @@ function finMesh(grp, geo, mat, x, y, z, rz, ry, kind, ctrl, phase) {
   flexInject(mat, kind, ctrl, { phase, rootX: x }); const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.set(0, ry, rz); m.renderOrder = 15; grp.add(m); grp.userData.mats.push(mat); return m;
 }
 function bodyMesh(grp, L, prof, mat, ctrl) { flexInject(mat, 'body', ctrl, {}); const m = new THREE.Mesh(fishBody(L, prof), mat); m.castShadow = true; grp.add(m); grp.userData.mats.push(mat); grp.userData.bodyMat = mat; return m; }
-const glowFin = (tex, colEdge, op) => new THREE.MeshPhysicalMaterial({ map: tex.map, alphaMap: tex.alpha, emissive: 0xffffff, emissiveMap: tex.map, emissiveIntensity: 0.55, transparent: true, side: THREE.DoubleSide, roughness: 0.45, metalness: 0, depthWrite: false, opacity: op + 0.08, sheen: 0.6, sheenColor: new THREE.Color(colEdge), iridescence: 0.4, iridescenceIOR: 1.4 });
+const glowFin = (tex, colEdge, op) => new THREE.MeshPhysicalMaterial({ map: tex.map, alphaMap: tex.alpha, emissive: 0xffffff, emissiveMap: tex.map, emissiveIntensity: 0.12, transparent: true, side: THREE.DoubleSide, roughness: 0.45, metalness: 0, depthWrite: false, opacity: op + 0.08, sheen: 0.6, sheenColor: new THREE.Color(colEdge), iridescence: 0.4, iridescenceIOR: 1.4 });
 const plainFin = (color, op, emis = 0.3) => new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: emis, alphaMap: plainFinAlpha(), transparent: true, side: THREE.DoubleSide, roughness: 0.5, depthWrite: false, opacity: op });
 
 export function makeBetta(L, colBody, colEdge) {
@@ -119,7 +124,8 @@ export function makeBetta(L, colBody, colEdge) {
   const prof = { top: (u) => Math.max(0.15 * hump(u, 0.38, 0.8), 0.03 * sstep(0.5, 0.85, u)), bot: (u) => Math.max(0.12 * hump(u, 0.42, 0.9), 0.028 * sstep(0.5, 0.85, u)), wid: (u) => Math.max(0.07 * hump(u, 0.33, 1.0), 0.014 * sstep(0.5, 0.85, u)) };
   bodyMesh(grp, L, prof, new THREE.MeshPhysicalMaterial({ map: bodyTexture('betta', colBody, colEdge), roughness: 0.3, metalness: 0.05, clearcoat: 0.9, clearcoatRoughness: 0.18, sheen: 1, sheenColor: new THREE.Color(colEdge), sheenRoughness: 0.4, iridescence: 0.6, iridescenceIOR: 1.6, iridescenceThicknessRange: [200, 500] }), ctrl);
   const tex = finTextures(colEdge, colBody); const fm = (op) => glowFin(tex, colEdge, op);
-  finMesh(grp, finGeo(L * 0.78, L * 0.62, Math.PI * 0.58, Math.PI * 1.42, ROUND), fm(0.6), -L * 0.46, 0, 0, 0, 0, 'fin', ctrl, 0.0);
+  addEyes(grp, L, prof, ctrl, 0.13, 0.03, L * 0.03, 0x6a4a2a);
+  finMesh(grp, finGeo(L * 0.78, L * 0.62, Math.PI * 0.58, Math.PI * 1.42, ROUND, 40, 10), fm(0.6), -L * 0.46, 0, 0, 0, 0, 'fin', ctrl, 0.0);
   finMesh(grp, finGeo(L * 0.55, L * 0.42, Math.PI * 0.3, Math.PI * 1.02, SAIL), fm(0.6), -L * 0.1, L * 0.04, 0, 0, 0, 'fin', ctrl, 1.3);
   finMesh(grp, finGeo(L * 0.68, L * 0.46, Math.PI * 1.02, Math.PI * 1.72, SAIL), fm(0.6), -L * 0.08, -L * 0.03, 0, 0, 0, 'fin', ctrl, 2.1);
   finMesh(grp, finGeo(L * 0.3, L * 0.32, Math.PI * 1.2, Math.PI * 1.45, ROUND), fm(0.55), L * 0.1, -L * 0.07, 0, 0, 0, 'fin', ctrl, 0.7);
@@ -132,52 +138,152 @@ export function makeTetra(L) {
   const prof = { top: (u) => Math.max(0.11 * hump(u, 0.4, 0.9), 0.022 * sstep(0.55, 0.9, u)), bot: (u) => Math.max(0.095 * hump(u, 0.45, 0.9), 0.02 * sstep(0.55, 0.9, u)), wid: (u) => Math.max(0.05 * hump(u, 0.36, 1.0), 0.01 * sstep(0.55, 0.9, u)) };
   _tetraTex = _tetraTex || bodyTexture('tetra');
   bodyMesh(grp, L, prof, new THREE.MeshPhysicalMaterial({ map: _tetraTex, roughness: 0.3, metalness: 0, clearcoat: 0.7, clearcoatRoughness: 0.2, iridescence: 0.3 }), ctrl);
-  const fm = (op) => plainFin(0xb8c8d6, op);
-  finMesh(grp, finGeo(L * 0.3, L * 0.24, Math.PI * 0.62, Math.PI * 1.38, FORK), fm(0.4), -L * 0.48, 0, 0, 0, 0, 'fin', ctrl, 0);
-  finMesh(grp, finGeo(L * 0.16, L * 0.14, Math.PI * 0.35, Math.PI * 0.9, SAIL), fm(0.35), -L * 0.04, L * 0.06, 0, 0, 0, 'fin', ctrl, 1.1);
-  finMesh(grp, finGeo(L * 0.18, L * 0.11, Math.PI * 1.1, Math.PI * 1.7, SAIL), fm(0.35), -L * 0.14, -L * 0.05, 0, 0, 0, 'fin', ctrl, 2.0);
-  for (const sg of [-1, 1]) finMesh(grp, finGeo(L * 0.12, L * 0.08, -Math.PI * 0.4, Math.PI * 0.4, ROUND), fm(0.35), L * 0.16, -L * 0.03, sg * L * 0.04, -0.4, sg * 1.2, 'pec', ctrl, 1.5 + sg);
+  addEyes(grp, L, prof, ctrl, 0.14, 0.02, L * 0.036, 0xd8c890);
+  const tft = finTex({ root: '#b8c8d6', edge: '#dde8f0', rays: 0.16, op: 0.5 }); const fm = () => realFin(tft, 0.45);
+  finMesh(grp, finGeo(L * 0.3, L * 0.24, Math.PI * 0.62, Math.PI * 1.38, FORK, 40, 10), fm(), -L * 0.48, 0, 0, 0, 0, 'fin', ctrl, 0);
+  finMesh(grp, finGeo(L * 0.16, L * 0.14, Math.PI * 0.35, Math.PI * 0.9, SAIL, 40, 10), fm(), -L * 0.04, L * 0.06, 0, 0, 0, 'fin', ctrl, 1.1);
+  finMesh(grp, finGeo(L * 0.18, L * 0.11, Math.PI * 1.1, Math.PI * 1.7, SAIL, 40, 10), fm(), -L * 0.14, -L * 0.05, 0, 0, 0, 'fin', ctrl, 2.0);
+  for (const sg of [-1, 1]) finMesh(grp, finGeo(L * 0.12, L * 0.08, -Math.PI * 0.4, Math.PI * 0.4, ROUND, 40, 10), fm(), L * 0.16, -L * 0.03, sg * L * 0.04, -0.4, sg * 1.2, 'pec', ctrl, 1.5 + sg);
   return grp;
 }
-let _clownTex;
-export function makeClownfish(L) {          // ocellaris: chubby, rounded fins with black edges
+/* ---------- eyes: iris sphere + pupil + glossy cornea, riding the spine like a rigid part ---------- */
+function addEyes(grp, L, prof, ctrl, u, yFrac, r, irisHex) {
+  const x = (0.5 - u) * L, y = yFrac * L, zs = prof.wid(u) * L * 0.92;
+  const irisM = new THREE.MeshPhysicalMaterial({ color: irisHex, roughness: 0.25, clearcoat: 1, clearcoatRoughness: 0.08 }); flexInject(irisM, 'rigid', ctrl, { rootX: x });
+  const pupM = new THREE.MeshStandardMaterial({ color: 0x050507, roughness: 0.4 }); flexInject(pupM, 'rigid', ctrl, { rootX: x });
+  for (const sg of [-1, 1]) {
+    const iris = new THREE.Mesh(new THREE.SphereGeometry(r, 18, 12), irisM); iris.position.set(x, y, sg * zs); grp.add(iris);
+    const pup = new THREE.Mesh(new THREE.SphereGeometry(r * 0.5, 12, 8), pupM); pup.position.set(x + r * 0.1, y, sg * (zs + r * 0.6)); grp.add(pup);
+  }
+  grp.userData.mats.push(irisM, pupM);
+}
+
+/* ---------- fin textures: root->edge colour, ray striations, optional dark margin + pale rim; alpha fades to the edge ---------- */
+export function finTex({ root, edge, margin = null, rim = null, rays = 0.22, op = 1 }) {
+  const N = 256, c = document.createElement('canvas'), a = document.createElement('canvas'); c.width = a.width = N; c.height = a.height = N;
+  const x = c.getContext('2d'), ax = a.getContext('2d');
+  const g = x.createLinearGradient(0, N, 0, 0); g.addColorStop(0, root); g.addColorStop(1, edge); x.fillStyle = g; x.fillRect(0, 0, N, N);
+  if (margin) { const mg = x.createLinearGradient(0, N, 0, 0); mg.addColorStop(0, 'rgba(0,0,0,0)'); mg.addColorStop(0.7, 'rgba(0,0,0,0)'); mg.addColorStop(0.86, margin); mg.addColorStop(0.95, margin); mg.addColorStop(1, rim || margin); x.fillStyle = mg; x.fillRect(0, 0, N, N); }
+  else if (rim) { const rg = x.createLinearGradient(0, N, 0, 0); rg.addColorStop(0, 'rgba(0,0,0,0)'); rg.addColorStop(0.9, 'rgba(0,0,0,0)'); rg.addColorStop(1, rim); x.fillStyle = rg; x.fillRect(0, 0, N, N); }
+  for (let i = 0; i < 40; i++) { const fx = (i + 0.5) / 40 * N + (Math.random() - 0.5) * 4; x.strokeStyle = `rgba(0,0,0,${rays * (0.5 + Math.random() * 0.5)})`; x.lineWidth = 1.2; x.beginPath(); x.moveTo(N / 2, N); x.lineTo(fx, 0); x.stroke();
+    x.strokeStyle = `rgba(255,255,255,${rays * 0.5})`; x.lineWidth = 0.8; x.beginPath(); x.moveTo(N / 2 + 1, N); x.lineTo(fx + 1.5, 0); x.stroke(); }
+  const ag = ax.createLinearGradient(0, N, 0, 0); const o = Math.round(op * 255); ag.addColorStop(0, `rgb(${o},${o},${o})`); ag.addColorStop(0.8, `rgb(${o * 0.9 | 0},${o * 0.9 | 0},${o * 0.9 | 0})`); ag.addColorStop(0.97, `rgb(${o * 0.6 | 0},${o * 0.6 | 0},${o * 0.6 | 0})`); ag.addColorStop(1, '#000'); ax.fillStyle = ag; ax.fillRect(0, 0, N, N);
+  const sg = ax.createLinearGradient(0, 0, N, 0); sg.addColorStop(0, 'rgba(0,0,0,1)'); sg.addColorStop(0.08, 'rgba(0,0,0,0)'); sg.addColorStop(0.92, 'rgba(0,0,0,0)'); sg.addColorStop(1, 'rgba(0,0,0,1)'); ax.globalCompositeOperation = 'multiply'; ax.fillStyle = sg; ax.fillRect(0, 0, N, N);
+  const map = new THREE.CanvasTexture(c), alpha = new THREE.CanvasTexture(a); map.colorSpace = THREE.SRGBColorSpace; return { map, alpha };
+}
+const realFin = (tex, rough = 0.5) => new THREE.MeshPhysicalMaterial({ map: tex.map, alphaMap: tex.alpha, transparent: true, side: THREE.DoubleSide, roughness: rough, metalness: 0, depthWrite: false, sheen: 0.3, sheenRoughness: 0.5, sheenColor: new THREE.Color(0xffffff) });
+
+/* ---------- reef species (model-quality procedural: real eyes, scale texture, ray fins, no emissive) ---------- */
+let _clownTex, _tangTex, _chromisTex;
+export function makeClownfish(L) {          // Amphiprion ocellaris: chubby, rounded fins, black-margined white bars
   const grp = new THREE.Group(); grp.userData.mats = []; const ctrl = makeCtrl(L); grp.userData.ctrl = ctrl;
-  const prof = { top: (u) => Math.max(0.17 * hump(u, 0.4, 0.75), 0.04 * sstep(0.5, 0.88, u)), bot: (u) => Math.max(0.15 * hump(u, 0.45, 0.8), 0.035 * sstep(0.5, 0.88, u)), wid: (u) => Math.max(0.075 * hump(u, 0.38, 1.0), 0.016 * sstep(0.5, 0.88, u)) };
+  const prof = { top: (u) => Math.max(0.17 * hump(u, 0.4, 0.75), 0.045 * sstep(0.5, 0.88, u)), bot: (u) => Math.max(0.15 * hump(u, 0.45, 0.8), 0.04 * sstep(0.5, 0.88, u)), wid: (u) => Math.max(0.078 * hump(u, 0.38, 1.0), 0.016 * sstep(0.5, 0.88, u)) };
   _clownTex = _clownTex || bodyTexture('clown');
-  bodyMesh(grp, L, prof, new THREE.MeshPhysicalMaterial({ map: _clownTex, roughness: 0.4, metalness: 0, clearcoat: 0.5, clearcoatRoughness: 0.3 }), ctrl);
-  const fm = (op) => plainFin(0xff8a2a, op, 0.25);
-  finMesh(grp, finGeo(L * 0.32, L * 0.3, Math.PI * 0.6, Math.PI * 1.4, ROUND), fm(0.85), -L * 0.47, 0, 0, 0, 0, 'fin', ctrl, 0);
-  finMesh(grp, finGeo(L * 0.5, L * 0.2, Math.PI * 0.2, Math.PI * 0.98, SAIL), fm(0.8), -L * 0.05, L * 0.1, 0, 0, 0, 'fin', ctrl, 1.1);
-  finMesh(grp, finGeo(L * 0.3, L * 0.16, Math.PI * 1.05, Math.PI * 1.75, SAIL), fm(0.8), -L * 0.15, -L * 0.09, 0, 0, 0, 'fin', ctrl, 2.0);
-  finMesh(grp, finGeo(L * 0.18, L * 0.18, Math.PI * 1.15, Math.PI * 1.55, ROUND), fm(0.8), L * 0.05, -L * 0.1, 0, 0, 0, 'fin', ctrl, 0.7);
-  for (const sg of [-1, 1]) finMesh(grp, finGeo(L * 0.2, L * 0.14, -Math.PI * 0.45, Math.PI * 0.45, ROUND), fm(0.8), L * 0.15, -L * 0.03, sg * L * 0.06, -0.4, sg * 1.2, 'pec', ctrl, 1.5 + sg);
+  bodyMesh(grp, L, prof, new THREE.MeshPhysicalMaterial({ map: _clownTex, roughness: 0.45, metalness: 0, clearcoat: 0.35, clearcoatRoughness: 0.35 }), ctrl);
+  addEyes(grp, L, prof, ctrl, 0.14, 0.035, L * 0.03, 0xe8952a);
+  const ft = finTex({ root: '#ff7a1a', edge: '#ff8f3a', margin: '#151210', rim: '#f4f0e8', rays: 0.18 }); const fm = () => realFin(ft, 0.55);
+  finMesh(grp, finGeo(L * 0.32, L * 0.3, Math.PI * 0.6, Math.PI * 1.4, ROUND, 40, 10), fm(), -L * 0.47, 0, 0, 0, 0, 'fin', ctrl, 0);
+  finMesh(grp, finGeo(L * 0.5, L * 0.2, Math.PI * 0.2, Math.PI * 0.98, SAIL, 40, 10), fm(), -L * 0.05, L * 0.1, 0, 0, 0, 'fin', ctrl, 1.1);
+  finMesh(grp, finGeo(L * 0.3, L * 0.16, Math.PI * 1.05, Math.PI * 1.75, SAIL, 40, 10), fm(), -L * 0.15, -L * 0.09, 0, 0, 0, 'fin', ctrl, 2.0);
+  finMesh(grp, finGeo(L * 0.18, L * 0.18, Math.PI * 1.15, Math.PI * 1.55, ROUND, 40, 10), fm(), L * 0.05, -L * 0.1, 0, 0, 0, 'fin', ctrl, 0.7);
+  for (const sg of [-1, 1]) finMesh(grp, finGeo(L * 0.2, L * 0.14, -Math.PI * 0.45, Math.PI * 0.45, ROUND, 40, 10), fm(), L * 0.15, -L * 0.03, sg * L * 0.06, -0.4, sg * 1.2, 'pec', ctrl, 1.5 + sg);
   return grp;
 }
-let _tangTex;
-export function makeTang(L) {               // yellow tang: tall disc body, long sail fins, lunate tail
+export function makeTang(L) {               // Zebrasoma flavescens: tall disc, pointed snout, long sail fins, lunate tail
   const grp = new THREE.Group(); grp.userData.mats = []; const ctrl = makeCtrl(L); grp.userData.ctrl = ctrl;
-  const prof = { top: (u) => Math.max(0.24 * hump(u, 0.42, 0.7), 0.04 * sstep(0.55, 0.9, u)), bot: (u) => Math.max(0.22 * hump(u, 0.45, 0.75), 0.035 * sstep(0.55, 0.9, u)), wid: (u) => Math.max(0.055 * hump(u, 0.4, 1.0), 0.012 * sstep(0.55, 0.9, u)) };
+  const prof = { top: (u) => Math.max(0.25 * hump(u, 0.44, 0.65), 0.04 * sstep(0.55, 0.9, u)), bot: (u) => Math.max(0.23 * hump(u, 0.47, 0.7), 0.035 * sstep(0.55, 0.9, u)), wid: (u) => Math.max(0.055 * hump(u, 0.4, 1.0), 0.012 * sstep(0.55, 0.9, u)) };
   _tangTex = _tangTex || bodyTexture('tang');
-  bodyMesh(grp, L, prof, new THREE.MeshPhysicalMaterial({ map: _tangTex, roughness: 0.42, metalness: 0, clearcoat: 0.4, clearcoatRoughness: 0.3 }), ctrl);
-  const fm = (op) => plainFin(0xffd21f, op, 0.3);
-  finMesh(grp, finGeo(L * 0.3, L * 0.34, Math.PI * 0.6, Math.PI * 1.4, LUNATE), fm(0.9), -L * 0.48, 0, 0, 0, 0, 'fin', ctrl, 0);
-  finMesh(grp, finGeo(L * 0.62, L * 0.28, Math.PI * 0.15, Math.PI * 0.98, SAIL), fm(0.9), -L * 0.08, L * 0.14, 0, 0, 0, 'fin', ctrl, 1.1);
-  finMesh(grp, finGeo(L * 0.5, L * 0.24, Math.PI * 1.02, Math.PI * 1.85, SAIL), fm(0.9), -L * 0.12, -L * 0.13, 0, 0, 0, 'fin', ctrl, 2.0);
-  for (const sg of [-1, 1]) finMesh(grp, finGeo(L * 0.2, L * 0.12, -Math.PI * 0.45, Math.PI * 0.45, ROUND), fm(0.7), L * 0.12, -L * 0.02, sg * L * 0.05, -0.4, sg * 1.2, 'pec', ctrl, 1.5 + sg);
+  bodyMesh(grp, L, prof, new THREE.MeshPhysicalMaterial({ map: _tangTex, roughness: 0.5, metalness: 0, clearcoat: 0.3, clearcoatRoughness: 0.35 }), ctrl);
+  addEyes(grp, L, prof, ctrl, 0.15, 0.07, L * 0.028, 0x3a2a14);
+  const ft = finTex({ root: '#f2c517', edge: '#ffd83a', rim: '#e8f4ff', rays: 0.14, op: 0.98 }); const fm = () => realFin(ft, 0.55);
+  finMesh(grp, finGeo(L * 0.3, L * 0.34, Math.PI * 0.6, Math.PI * 1.4, LUNATE, 40, 10), fm(), -L * 0.48, 0, 0, 0, 0, 'fin', ctrl, 0);
+  finMesh(grp, finGeo(L * 0.62, L * 0.3, Math.PI * 0.15, Math.PI * 0.98, SAIL, 40, 10), fm(), -L * 0.08, L * 0.14, 0, 0, 0, 'fin', ctrl, 1.1);
+  finMesh(grp, finGeo(L * 0.5, L * 0.26, Math.PI * 1.02, Math.PI * 1.85, SAIL, 40, 10), fm(), -L * 0.12, -L * 0.13, 0, 0, 0, 'fin', ctrl, 2.0);
+  const pt = finTex({ root: '#f2c517', edge: '#ffe98a', rays: 0.12, op: 0.8 });
+  for (const sg of [-1, 1]) finMesh(grp, finGeo(L * 0.2, L * 0.12, -Math.PI * 0.45, Math.PI * 0.45, ROUND, 40, 10), realFin(pt), L * 0.12, -L * 0.02, sg * L * 0.05, -0.4, sg * 1.2, 'pec', ctrl, 1.5 + sg);
   return grp;
 }
-let _chromisTex;
-export function makeChromis(L) {            // blue-green chromis: small, forked tail, schooling
+export function makeChromis(L) {            // Chromis viridis: small, forked tail, blue-green iridescent scales
   const grp = new THREE.Group(); grp.userData.mats = []; const ctrl = makeCtrl(L); grp.userData.ctrl = ctrl;
   const prof = { top: (u) => Math.max(0.15 * hump(u, 0.4, 0.8), 0.028 * sstep(0.55, 0.9, u)), bot: (u) => Math.max(0.13 * hump(u, 0.45, 0.85), 0.025 * sstep(0.55, 0.9, u)), wid: (u) => Math.max(0.05 * hump(u, 0.38, 1.0), 0.011 * sstep(0.55, 0.9, u)) };
   _chromisTex = _chromisTex || bodyTexture('chromis');
-  bodyMesh(grp, L, prof, new THREE.MeshPhysicalMaterial({ map: _chromisTex, roughness: 0.3, metalness: 0.05, clearcoat: 0.8, clearcoatRoughness: 0.2, iridescence: 0.5, iridescenceIOR: 1.5 }), ctrl);
-  const fm = (op) => plainFin(0x9fe6df, op, 0.3);
-  finMesh(grp, finGeo(L * 0.34, L * 0.26, Math.PI * 0.62, Math.PI * 1.38, FORK), fm(0.5), -L * 0.48, 0, 0, 0, 0, 'fin', ctrl, 0);
-  finMesh(grp, finGeo(L * 0.4, L * 0.16, Math.PI * 0.25, Math.PI * 0.95, SAIL), fm(0.45), -L * 0.06, L * 0.09, 0, 0, 0, 'fin', ctrl, 1.1);
-  finMesh(grp, finGeo(L * 0.26, L * 0.13, Math.PI * 1.05, Math.PI * 1.75, SAIL), fm(0.45), -L * 0.14, -L * 0.08, 0, 0, 0, 'fin', ctrl, 2.0);
-  for (const sg of [-1, 1]) finMesh(grp, finGeo(L * 0.14, L * 0.09, -Math.PI * 0.45, Math.PI * 0.45, ROUND), fm(0.45), L * 0.15, -L * 0.02, sg * L * 0.045, -0.4, sg * 1.2, 'pec', ctrl, 1.5 + sg);
+  bodyMesh(grp, L, prof, new THREE.MeshPhysicalMaterial({ map: _chromisTex, roughness: 0.32, metalness: 0.05, clearcoat: 0.6, clearcoatRoughness: 0.2, iridescence: 0.45, iridescenceIOR: 1.5, iridescenceThicknessRange: [150, 400] }), ctrl);
+  addEyes(grp, L, prof, ctrl, 0.14, 0.03, L * 0.032, 0xc8b070);
+  const ft = finTex({ root: '#8fd8d0', edge: '#c8f0ee', rays: 0.16, op: 0.6 }); const fm = () => realFin(ft, 0.45);
+  finMesh(grp, finGeo(L * 0.34, L * 0.26, Math.PI * 0.62, Math.PI * 1.38, FORK, 40, 10), fm(), -L * 0.48, 0, 0, 0, 0, 'fin', ctrl, 0);
+  finMesh(grp, finGeo(L * 0.4, L * 0.16, Math.PI * 0.25, Math.PI * 0.95, SAIL, 40, 10), fm(), -L * 0.06, L * 0.09, 0, 0, 0, 'fin', ctrl, 1.1);
+  finMesh(grp, finGeo(L * 0.26, L * 0.13, Math.PI * 1.05, Math.PI * 1.75, SAIL, 40, 10), fm(), -L * 0.14, -L * 0.08, 0, 0, 0, 'fin', ctrl, 2.0);
+  for (const sg of [-1, 1]) finMesh(grp, finGeo(L * 0.14, L * 0.09, -Math.PI * 0.45, Math.PI * 0.45, ROUND, 40, 10), fm(), L * 0.15, -L * 0.02, sg * L * 0.045, -0.4, sg * 1.2, 'pec', ctrl, 1.5 + sg);
   return grp;
+}
+
+/* ---------- glTF drop-in: any fish model becomes a Swimmer-compatible group ----------
+   Normalises the model (longest axis -> +x, head toward +x by the front-heavy-mass heuristic, length L, centred),
+   bakes that into the geometry and injects the spine shader so it bends like the procedural fish. Skinning is not
+   preserved: the spine shader drives the motion. */
+export async function loadFishGLB(loader, url, L, opts = {}) {
+  const gltf = await new Promise((res, rej) => loader.load(url, res, undefined, rej)); const root = gltf.scene; root.updateMatrixWorld(true);
+  const bb = new THREE.Box3().setFromObject(root), size = bb.size ? bb.getSize(new THREE.Vector3()) : new THREE.Vector3().subVectors(bb.max, bb.min);
+  const axis = size.x >= size.y && size.x >= size.z ? 'x' : size.z >= size.y ? 'z' : 'y'; const ctr = bb.getCenter(new THREE.Vector3());
+  // head heuristic: mean vertex position along the body axis is biased toward the thicker (head) half
+  let sum = 0, n = 0; root.traverse((o) => { if (o.isMesh) { const p = o.geometry.attributes.position, v = new THREE.Vector3(); for (let i = 0; i < p.count; i += 3) { v.fromBufferAttribute(p, i).applyMatrix4(o.matrixWorld); sum += v[axis]; n++; } } });
+  const headPos = (sum / n) > ctr[axis]; const s = L / size[axis];
+  const rot = new THREE.Matrix4(); if (axis === 'z') rot.makeRotationY(headPos ? Math.PI / 2 : -Math.PI / 2); else if (axis === 'y') rot.makeRotationZ(headPos ? -Math.PI / 2 : Math.PI / 2); else if (!headPos) rot.makeRotationY(Math.PI);
+  if (opts.flip) rot.multiply(new THREE.Matrix4().makeRotationY(Math.PI));
+  const norm = new THREE.Matrix4().makeScale(s, s, s).multiply(rot).multiply(new THREE.Matrix4().makeTranslation(-ctr.x, -ctr.y, -ctr.z));
+  const grp = new THREE.Group(); grp.userData.mats = []; const ctrl = makeCtrl(L); grp.userData.ctrl = ctrl;
+  const meshes = []; root.traverse((o) => { if (o.isMesh) meshes.push(o); });
+  for (const o of meshes) { const geo = o.geometry.clone(); geo.applyMatrix4(new THREE.Matrix4().multiplyMatrices(norm, o.matrixWorld)); const mat = Array.isArray(o.material) ? o.material[0].clone() : o.material.clone();
+    if (!o.isSkinnedMesh) flexInject(mat, 'body', ctrl, {}); const m = new THREE.Mesh(geo, mat); m.castShadow = true; grp.add(m); grp.userData.mats.push(mat); if (!grp.userData.bodyMat) grp.userData.bodyMat = mat; }
+  return grp;
+}
+
+/* ---------- underwater shading, shared by everything inside a tank ----------
+   Real water over 10-30 cm is nearly clear: a little red loss with distance, a little blue in-scatter, and the light's
+   caustic web projected on up-facing surfaces. Injected into each material's fragment shader; chains after any existing
+   onBeforeCompile (the fish spine shader). front = world z of the front glass, surfY = world y of the surface. */
+export function makeWater(front, surfY, causScale = 58) {
+  const u = { uAbsorb: { value: new THREE.Vector3(1.0, 0.32, 0.14) }, uScat: { value: new THREE.Color(0.06, 0.20, 0.32) }, uFront: { value: front }, uSurfY: { value: surfY }, uCaus: { value: 0.5 }, uCausScale: { value: causScale } };
+  function inject(mat, { caustic = true, coralline = false } = {}) {
+    const prev = mat.onBeforeCompile, prevKey = mat.customProgramCacheKey;
+    mat.onBeforeCompile = (sh, r) => { if (prev) prev.call(mat, sh, r);
+      Object.assign(sh.uniforms, u); sh.uniforms.uT = uT;
+      sh.vertexShader = 'varying vec3 vWPos;\n' + sh.vertexShader.replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
+        { vec4 wp4 = vec4(transformed, 1.0);
+          #ifdef USE_INSTANCING
+          wp4 = instanceMatrix * wp4;
+          #endif
+          vWPos = (modelMatrix * wp4).xyz; }`);
+      let fs = sh.fragmentShader;
+      if (coralline) fs = fs.replace('#include <map_fragment>', `#include <map_fragment>
+        { float n1 = fbm3(vWPos * 48.0), n2 = noise3(vWPos * 150.0), n3 = fbm3(vWPos * 22.0 + 7.0);
+          float cor = smoothstep(0.56, 0.66, n1 + 0.10 * n2) * (0.45 + 0.55 * smoothstep(0.35, 0.65, n3));
+          vec3 corCol = mix(vec3(0.30, 0.11, 0.22), vec3(0.52, 0.26, 0.38), n2);
+          diffuseColor.rgb = mix(diffuseColor.rgb, corCol * (0.6 + 0.8 * diffuseColor.g), cor * 0.75);
+          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.72, 0.86, 0.50), smoothstep(0.45, 0.68, n3) * 0.55);
+          diffuseColor.rgb *= 0.78 + 0.22 * n2; }`);
+      fs = fs.replace('#include <dithering_fragment>', `
+        { float dz = max(0.0, uFront - vWPos.z) * 1.06 + 0.015; float dy = max(0.0, uSurfY - vWPos.y);
+          vec3 T = exp(-uAbsorb * (dz + dy * 0.35)); float s = 1.0 - exp(-dz * 1.1);
+          ${caustic ? `vec3 up = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz); float nu = clamp(dot(normal, up), 0.0, 1.0);
+          vec2 cp = vWPos.xz * uCausScale; float ca = fbm3(vec3(cp, uT * 0.33)), cb = fbm3(vec3(cp * 1.7 + 3.0, -uT * 0.27));
+          float c = pow(1.0 - abs(ca - 0.5) * 2.0, 5.0) * 0.7 + pow(1.0 - abs(cb - 0.5) * 2.0, 7.0) * 0.5;
+          gl_FragColor.rgb += diffuseColor.rgb * vec3(0.72, 0.9, 1.0) * c * uCaus * nu * exp(-dy * 3.0);` : ''}
+          gl_FragColor.rgb = gl_FragColor.rgb * T + uScat * s; }
+        #include <dithering_fragment>`);
+      sh.fragmentShader = `varying vec3 vWPos; uniform vec3 uAbsorb, uScat; uniform float uFront, uSurfY, uCaus, uCausScale, uT;\n${GLSL_NOISE}\n` + fs; };
+    mat.customProgramCacheKey = () => (prevKey ? prevKey.call(mat) : '') + '|water' + (caustic ? 'c' : '') + (coralline ? 'k' : '');
+    return mat;
+  }
+  function submerge(obj, opts) { obj.traverse((o) => { if (o.isMesh && o.material && (o.material.isMeshStandardMaterial || o.material.isMeshPhysicalMaterial) && !o.material.userData.water) { o.material.userData.water = 1; inject(o.material, opts); } }); return obj; }
+  return { u, inject, submerge };
+}
+
+/* ---------- glTF placement: clone a loaded scene, scale/rotate, recentre in xz, rest its lowest point on floorY (minus sink) ---------- */
+export function placeGLB(scene0, { scale = [1, 1, 1], rotY = 0, rotX = 0, rotZ = 0, x = 0, z = 0, floorY = 0, sink = 0, material = null, shadows = true }) {
+  const m = scene0.clone(); m.traverse((o) => { if (o.isMesh) { if (shadows) { o.castShadow = true; o.receiveShadow = true; } const mm = o.material.clone(); if (material) material(mm, o); o.material = mm; } });
+  m.scale.set(scale[0], scale[1], scale[2]); m.rotation.set(rotX, rotY, rotZ); m.updateMatrixWorld(true);
+  const bb = new THREE.Box3().setFromObject(m, true); m.position.set(x - (bb.min.x + bb.max.x) / 2, floorY - bb.min.y - sink, z - (bb.min.z + bb.max.z) / 2); m.updateMatrixWorld(true); return m;
 }
 
 /* ---------- dot-matrix LED clock (Gingko-style: dots that shine through a shell) ---------- */
