@@ -446,6 +446,7 @@ body.calm #layer-bold .d{ transition:transform .5s cubic-bezier(.22,1,.36,1); }
   <canvas id="bgcanvas"></canvas>
   <canvas id="gl3d" style="position:fixed;inset:0;width:100%;height:100%;display:none;z-index:1"></canvas>
   <canvas id="gl3d2" style="position:fixed;inset:0;width:100%;height:100%;display:none;z-index:1"></canvas>
+  <canvas id="gl3d3" style="position:fixed;inset:0;width:100%;height:100%;display:none;z-index:1"></canvas>
   <canvas id="weatherfx"></canvas>
   <canvas id="viz"></canvas>
 
@@ -575,7 +576,7 @@ body.calm #layer-bold .d{ transition:transform .5s cubic-bezier(.22,1,.36,1); }
       <div class="row"><div class="lbl">Auto night dimming<small>Dims + warms after sunset</small></div><div class="tg on" id="tg-night"></div></div>
       <div class="row"><div class="lbl">Burn-in drift<small>Slowly nudges pixels (OLED safe)</small></div><div class="tg on" id="tg-drift"></div></div>
 
-      <div class="sect">3D scenes (Hearth · Aquarium)</div>
+      <div class="sect">3D scenes (Hearth · Aquarium · Reef)</div>
       <div class="row"><div class="lbl">Phone motion<small id="hm-status">Vapor, logs, water and fish react when you move the phone</small></div><button class="btn" id="hm-enable">Enable</button></div>
       <div class="row"><div class="lbl">Zoom<small>Or pinch on screen · drag vertically / two fingers to move the box</small></div><input type="range" min="50" max="300" value="100" class="bright" id="hz-zoom" /></div>
       <div class="row"><div class="lbl">View position</div><button class="btn" id="hz-reset">Reset view</button></div>
@@ -616,7 +617,7 @@ const DEFAULTS={
   mic:false, audio:false, weather:false, wfx:true,
   wake:true, night:true, drift:true,
   accent:'#6ad5ff', accent2:'#b892ff', accentAuto:true,
-  bg:'auto', font:'Poppins', numColor:'default', brightness:100, motion:'calm', motionSensor:false, hearthView:{zoom:1,px:0,py:0}, tankView:{zoom:1,px:0,py:0}
+  bg:'auto', font:'Poppins', numColor:'default', brightness:100, motion:'calm', motionSensor:false, hearthView:{zoom:1,px:0,py:0}, tankView:{zoom:1,px:0,py:0}, reefView:{zoom:1,px:0,py:0}
 };
 let S=Object.assign({},DEFAULTS);
 try{ const saved=JSON.parse(localStorage.getItem('lumina')||'{}'); Object.assign(S,saved);
@@ -670,6 +671,7 @@ const PALETTES={
   serene:{bg:{type:'grad',a:'#0e1626',b:'#050810'},accent:'#a3b9ff',accent2:'#b7efe3'},
   hearth:{bg:{type:'grad',a:'#140708',b:'#020102'},accent:'#ffb347',accent2:'#ff6a2a'},
   tank:{bg:{type:'grad',a:'#0b1a26',b:'#020507'},accent:'#4f8cff',accent2:'#ff5fb0'},
+  reef:{bg:{type:'grad',a:'#06131f',b:'#020408'},accent:'#7fd4ff',accent2:'#ff9a3c'},
   minimal:{bg:{type:'solid',c:'#0a0a0c'},accent:'#e8e8ee',accent2:'#ff4d00'},
   nixie:{bg:{type:'grad',a:'#2a1405',b:'#0a0402'},accent:'#ff7a18',accent2:'#ffd15c'},
   binary:{bg:{type:'solid',c:'#03060a'},accent:'#39ff14',accent2:'#00e5ff'},
@@ -1654,7 +1656,8 @@ function drawHearth(dt){
 registerTheme('serene',{ name:'Serene', desc:'Soothing two-tone, dusk diffuser', kind:'dom', noBackdrop:true, draw(){ drawDiffuser(); } });
 /* 3D faces (Three.js, PBR + bloom), loaded on demand; each has its own WebGL canvas. A 2D painter is the fallback while loading / without WebGL2 */
 const GL3D={ hearth:{url:'./hearth3d.js',global:'HearthGL',canvas:'#gl3d', state:'idle',viewKey:'hearthView'},
-             tank:  {url:'./tank3d.js',  global:'TankGL',  canvas:'#gl3d2',state:'idle',viewKey:'tankView'} };
+             tank:  {url:'./tank3d.js',  global:'TankGL',  canvas:'#gl3d2',state:'idle',viewKey:'tankView'},
+             reef:  {url:'./reef3d.js',  global:'ReefGL',  canvas:'#gl3d3',state:'idle',viewKey:'reefView'} };
 function gl3dLoad(id){ const F=GL3D[id]; if(F.state!=='idle') return; F.state='loading';
   const test=document.createElement('canvas'); if(!test.getContext('webgl2')){ F.state='failed'; return; }
   import(F.url).then(()=>{ try{ window[F.global].init($(F.canvas)); F.state='ready'; gl3dSync(id); if(S.motionSensor) hearthMotionEnable(false); }catch(e){ console.warn(id+' 3d init failed',e); F.state='failed'; } })
@@ -1701,6 +1704,9 @@ function hearthMotionEnable(fromGesture){
 if(S.motionSensor){ addEventListener('pointerdown',()=>hearthMotionEnable(true),{once:true}); }
 register3dFace('hearth','Hearth','Flame diffuser with LED clock', drawHearth, ()=>{ flames=[]; mist=[]; sparks=[]; plumeFire.a.fill(0); hearthFire.a.fill(0); });
 register3dFace('tank','Aquarium','Desktop betta tank, living room', drawTankFallback);
+register3dFace('reef','Reef','Rimless marine tank at night · best in landscape', drawReefFallback);
+function drawReefFallback(){ paintBase(bgx); const {w,h}=state, T=timeStr(); bgx.fillStyle=hexA(S.accent,0.9); bgx.textAlign='center'; bgx.textBaseline='middle';
+  bgx.font=`700 ${Math.min(w,h)*0.22}px 'Share Tech Mono',monospace`; bgx.fillText(T.text,w/2,h*0.5); bgx.font=`500 ${Math.min(w,h)*0.035}px Poppins,sans-serif`; bgx.fillStyle=hexA(S.accent,0.55); bgx.fillText('loading reef…',w/2,h*0.5+Math.min(w,h)*0.14); }
 function drawTankFallback(){ paintBase(bgx); const {w,h}=state, T=timeStr(); bgx.fillStyle=hexA(S.accent,0.9); bgx.textAlign='center'; bgx.textBaseline='middle';
   bgx.font=`700 ${Math.min(w*0.16,h*0.2)}px 'DSEG7 Classic','Share Tech Mono',monospace`; bgx.fillText(T.text,w/2,h/2);
   bgx.font=`500 ${Math.min(w*0.035,h*0.04)}px Poppins,sans-serif`; bgx.fillStyle='rgba(255,255,255,.5)'; bgx.fillText('loading aquarium…',w/2,h/2+Math.min(w*0.12,h*0.14)); }
