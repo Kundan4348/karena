@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { EffectComposer, RenderPass, EffectPass, BloomEffect, NoiseEffect, VignetteEffect, ToneMappingEffect, ToneMappingMode, BlendFunction } from 'postprocessing';
-import { pink, rnd, clamp, GLSL_NOISE, uT, makeClownfish, makeTang, makeChromis, Swimmer, makeDotClock } from './fishlib.js';
+import { pink, rnd, clamp, GLSL_NOISE, uT, makeClownfish, makeTang, makeChromis, Swimmer, makeGlowClock } from './fishlib.js';
 
 /* 60 x 30 x 30 cm low-iron rimless tank on a 60 x 34 cabinet; all metres */
 const R = { W: 0.60, H: 0.30, D: 0.30, fill: 0.9, cabH: 0.20, cabD: 0.34, glass: 0.008 };
@@ -26,16 +26,16 @@ function sandTexture() {
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; return t;
 }
 const hsh = (x, y, z) => { const s = Math.sin(x * 12.9898 + y * 78.233 + z * 37.719) * 43758.5453; return s - Math.floor(s); };
-function rockGeo(r, seed) { const g0 = new THREE.IcosahedronGeometry(r, 5); g0.deleteAttribute('uv'); const g = mergeVertices(g0); const p = g.attributes.position, v = new THREE.Vector3();
+function rockGeo(r, seed) { const g0 = new THREE.IcosahedronGeometry(r, 5); const g = mergeVertices(g0); const p = g.attributes.position, v = new THREE.Vector3();
   for (let i = 0; i < p.count; i++) { v.fromBufferAttribute(p, i); const n = v.clone().normalize();
-    const d = 1 + 0.26 * (Math.sin(n.x * 4.1 + seed) * Math.sin(n.y * 3.3 + seed * 2) + 0.7 * Math.sin(n.z * 6.7 + n.x * 3 + seed)) + 0.09 * Math.sin(n.x * 21 + seed) * Math.sin(n.z * 19 + n.y * 17) + 0.03 * (hsh(n.x + seed, n.y, n.z) - 0.5) - 0.25 * Math.max(0, -n.y);
+    const d = 1 + 0.26 * (Math.sin(n.x * 4.1 + seed) * Math.sin(n.y * 3.3 + seed * 2) + 0.7 * Math.sin(n.z * 6.7 + n.x * 3 + seed)) + 0.12 * Math.sin(n.x * 21 + seed) * Math.sin(n.z * 19 + n.y * 17) + 0.06 * Math.sin(n.y * 43 + seed) * Math.sin(n.x * 37) + 0.04 * (hsh(n.x + seed, n.y, n.z) - 0.5) - 0.25 * Math.max(0, -n.y);
     v.copy(n).multiplyScalar(r * d); v.y *= 0.7; p.setXYZ(i, v.x, v.y, v.z); }
   g.computeVertexNormals(); return g; }
 function rockMat() { // live rock: grey-brown with purple coralline patches
   const N = 256, c = document.createElement('canvas'); c.width = c.height = N; const x = c.getContext('2d'); x.fillStyle = '#4e4a46'; x.fillRect(0, 0, N, N);
-  for (let i = 0; i < 140; i++) { x.fillStyle = `rgba(${110 + Math.random() * 30 | 0},${60 + Math.random() * 25 | 0},${120 + Math.random() * 40 | 0},${0.15 + Math.random() * 0.3})`; x.beginPath(); x.arc(Math.random() * N, Math.random() * N, 3 + Math.random() * 10, 0, 6.29); x.fill(); }
+  for (let i = 0; i < 90; i++) { x.fillStyle = `rgba(${110 + Math.random() * 30 | 0},${70 + Math.random() * 25 | 0},${115 + Math.random() * 30 | 0},${0.1 + Math.random() * 0.22})`; x.beginPath(); x.arc(Math.random() * N, Math.random() * N, 3 + Math.random() * 10, 0, 6.29); x.fill(); }
   for (let i = 0; i < 6000; i++) { x.fillStyle = `rgba(0,0,0,${Math.random() * 0.3})`; x.fillRect(Math.random() * N, Math.random() * N, 1, 1); }
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return new THREE.MeshStandardMaterial({ color: 0x7a736c, roughness: 0.95, metalness: 0 }); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return new THREE.MeshStandardMaterial({ map: t, color: 0xa8a39c, roughness: 0.98, metalness: 0 }); }
 
 /* ---------- the reef ---------- */
 const sway = { value: 0 };
@@ -56,8 +56,8 @@ function buildReef(scene) {
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) { const seam = new THREE.Mesh(new THREE.CylinderGeometry(0.0015, 0.0015, H, 8), seamMat); seam.position.set(sx * (W / 2 - 0.004), y0 + H / 2, sz * (D / 2 - 0.004)); seam.renderOrder = 31; g.add(seam); }
   const rim = new THREE.Mesh(new THREE.BoxGeometry(W, 0.003, D), seamMat); rim.position.y = y0 + H - 0.0015; rim.renderOrder = 31; g.add(rim);
   // water: deep blue tint + back wall painted black inside (looks like open ocean) + surface
-  const tint = new THREE.Mesh(new THREE.BoxGeometry(W - 0.012, waterH, D - 0.012), new THREE.MeshBasicMaterial({ color: 0x0b3f66, transparent: true, opacity: 0.3, side: THREE.BackSide, depthWrite: false })); tint.position.y = y0 + waterH / 2; tint.renderOrder = 2; g.add(tint);
-  const bgTex = (() => { const c = document.createElement('canvas'); c.width = 4; c.height = 256; const x = c.getContext('2d'); const gr = x.createLinearGradient(0, 0, 0, 256); gr.addColorStop(0, '#2c6f9a'); gr.addColorStop(0.45, '#123e62'); gr.addColorStop(1, '#061524'); x.fillStyle = gr; x.fillRect(0, 0, 4, 256); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })();
+  const tint = new THREE.Mesh(new THREE.BoxGeometry(W - 0.012, waterH, D - 0.012), new THREE.MeshBasicMaterial({ color: 0x2a86b8, transparent: true, opacity: 0.2, side: THREE.BackSide, depthWrite: false })); tint.position.y = y0 + waterH / 2; tint.renderOrder = 2; g.add(tint);
+  const bgTex = (() => { const c = document.createElement('canvas'); c.width = 4; c.height = 256; const x = c.getContext('2d'); const gr = x.createLinearGradient(0, 0, 0, 256); gr.addColorStop(0, '#5fb3dc'); gr.addColorStop(0.5, '#2478a8'); gr.addColorStop(1, '#10405f'); x.fillStyle = gr; x.fillRect(0, 0, 4, 256); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })();
   const back = new THREE.Mesh(new THREE.PlaneGeometry(W - 0.014, H - 0.01), new THREE.MeshStandardMaterial({ map: bgTex, roughness: 1 })); back.position.set(0, y0 + H / 2, -D / 2 + 0.008); back.receiveShadow = true; g.add(back);
   const surfGeo = new THREE.PlaneGeometry(W - 0.014, D - 0.014, 48, 24); surfGeo.rotateX(-Math.PI / 2);
   const surface = new THREE.Mesh(surfGeo, new THREE.MeshPhysicalMaterial({ color: 0x000000, roughness: 0.03, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, envMapIntensity: 1.3, specularIntensity: 1, ior: 1.33, depthWrite: false })); surface.position.y = y0 + waterH; surface.renderOrder = 25; g.add(surface);
@@ -75,7 +75,7 @@ function buildReef(scene) {
         float edge=smoothstep(0.0,0.05,vUv.x)*smoothstep(1.0,0.95,vUv.x)*smoothstep(0.0,0.1,vUv.y)*smoothstep(1.0,0.9,vUv.y);
         gl_FragColor=vec4(uTint*c*uAmt*edge, c*uAmt*edge); }` });
   const caustics = new THREE.Mesh(new THREE.PlaneGeometry(W - 0.02, D - 0.02), causMat); caustics.rotation.x = -Math.PI / 2; caustics.position.y = y0 + 0.0135; caustics.renderOrder = 3; g.add(caustics);
-  const rayMat = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, uniforms: { uT: { value: 0 }, uAmt: { value: 0.16 } },
+  const rayMat = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, uniforms: { uT: { value: 0 }, uAmt: { value: 0.22 } },
     vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
     fragmentShader: `${GLSL_NOISE} uniform float uT, uAmt; varying vec2 vUv;
       void main(){ float x=vUv.x*9.0+uT*0.05; float r=pow(fbm3(vec3(x, vUv.y*0.6+uT*0.1, uT*0.07)),3.0)*2.2;
@@ -105,17 +105,53 @@ function buildReef(scene) {
   const moteGeo = new THREE.BufferGeometry(); moteGeo.setAttribute('position', new THREE.BufferAttribute(motePos, 3));
   const motes = new THREE.Points(moteGeo, new THREE.PointsMaterial({ color: 0xbfe0ff, size: 0.0016, transparent: true, opacity: 0.5, depthWrite: false, sizeAttenuation: true })); motes.renderOrder = 5; g.add(motes);
   // light bar above (black, on two thin wires) — the marine LED
-  const bar = new THREE.Mesh(new RoundedBoxGeometry(W * 0.9, 0.012, 0.05, 3, 0.003), new THREE.MeshPhysicalMaterial({ color: 0x141518, roughness: 0.45, metalness: 0.3, clearcoat: 0.4 })); bar.position.y = y0 + H + 0.11; bar.castShadow = true; g.add(bar);
-  const wireM = new THREE.MeshStandardMaterial({ color: 0x333338, roughness: 0.6 }); for (const sx of [-1, 1]) { const w = new THREE.Mesh(new THREE.CylinderGeometry(0.0008, 0.0008, 0.5, 6), wireM); w.position.set(sx * W * 0.38, y0 + H + 0.36, 0); g.add(w); }
-  const led = new THREE.Mesh(new THREE.PlaneGeometry(W * 0.82, 0.03), new THREE.MeshBasicMaterial({ color: new THREE.Color(1.2, 1.5, 2.0) })); led.rotation.x = Math.PI / 2; led.position.y = y0 + H + 0.1035; g.add(led);
-  const beam = new THREE.SpotLight(0xcfe8ff, 1.0, 0.9, 0.9, 0.6, 2); beam.position.set(0, y0 + H + 0.1, 0); beam.target.position.set(0, y0, 0); beam.castShadow = true; beam.shadow.mapSize.set(1024, 1024); beam.shadow.camera.near = 0.05; beam.shadow.camera.far = 0.8; beam.shadow.bias = -0.0002; beam.shadow.normalBias = 0.001; beam.shadow.radius = 3; g.add(beam); g.add(beam.target);
-  const glow = new THREE.PointLight(0xbfe0ff, 0.5, 1.2, 2); glow.position.set(0, y0 + H + 0.09, 0); g.add(glow);
-  g.userData = { y0, waterH, surface, surfBase, caustics, rayMat, beam, glow, tents, motes, motePos, anem };
+  const bar = new THREE.Mesh(new RoundedBoxGeometry(W * 0.9, 0.012, 0.05, 3, 0.003), new THREE.MeshPhysicalMaterial({ color: 0x141518, roughness: 0.45, metalness: 0.3, clearcoat: 0.4 })); bar.position.y = y0 + H + 0.075; bar.castShadow = true; g.add(bar);
+  const wireM = new THREE.MeshStandardMaterial({ color: 0x333338, roughness: 0.6 }); for (const sx of [-1, 1]) { const w = new THREE.Mesh(new THREE.CylinderGeometry(0.0008, 0.0008, 0.5, 6), wireM); w.position.set(sx * W * 0.38, y0 + H + 0.325, 0); g.add(w); }
+  const led = new THREE.Mesh(new THREE.PlaneGeometry(W * 0.82, 0.03), new THREE.MeshBasicMaterial({ color: new THREE.Color(1.2, 1.5, 2.0) })); led.rotation.x = Math.PI / 2; led.position.y = y0 + H + 0.0685; g.add(led);
+  const beam = new THREE.SpotLight(0xdff0ff, 1.7, 0.9, 0.95, 0.6, 2); beam.position.set(0, y0 + H + 0.065, 0); beam.target.position.set(0, y0, 0); beam.castShadow = true; beam.shadow.mapSize.set(1024, 1024); beam.shadow.camera.near = 0.05; beam.shadow.camera.far = 0.8; beam.shadow.bias = -0.0002; beam.shadow.normalBias = 0.001; beam.shadow.radius = 3; g.add(beam); g.add(beam.target);
+  const glow = new THREE.PointLight(0xbfe0ff, 0.6, 1.2, 2); glow.position.set(0, y0 + H + 0.06, 0); g.add(glow);
+  const inner = new THREE.PointLight(0x7fc4ff, 0.12, 0.5, 2); inner.position.set(0.1, y0 + waterH * 0.6, 0.05); g.add(inner);
+  const eel = buildEel(g, y0);
+  g.userData = { y0, waterH, surface, surfBase, caustics, rayMat, beam, glow, tents, motes, motePos, anem, eel };
   scene.add(g); return g;
 }
+
+/* ---------- snowflake moray: peeks from a hole in the rock, gapes to breathe, sways, occasionally retreats ---------- */
+function eelSkin() {
+  const N = 512, c = document.createElement('canvas'); c.width = N; c.height = 128; const x = c.getContext('2d'); x.fillStyle = '#e9e2cf'; x.fillRect(0, 0, N, 128);
+  for (let i = 0; i < 70; i++) { x.fillStyle = `rgba(${30 + Math.random() * 20 | 0},${28 + Math.random() * 16 | 0},${26 | 0},${0.75 + Math.random() * 0.25})`; x.beginPath(); const cx = Math.random() * N, cy = Math.random() * 128; for (let k = 0; k < 8; k++) { const a = k / 8 * 6.283, r = 10 + Math.random() * 16; x.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r * 0.7); } x.closePath(); x.fill(); }
+  for (let i = 0; i < 160; i++) { x.fillStyle = `rgba(240,200,60,${0.5 + Math.random() * 0.5})`; x.beginPath(); x.arc(Math.random() * N, Math.random() * 128, 1.5 + Math.random() * 3, 0, 6.29); x.fill(); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = THREE.RepeatWrapping; t.repeat.set(2, 1); return t;
+}
+function buildEel(parent, y0) {
+  const grp = new THREE.Group(); const skin = new THREE.MeshPhysicalMaterial({ map: eelSkin(), roughness: 0.45, clearcoat: 0.6, clearcoatRoughness: 0.3 });
+  // body: a tapered tube from inside the rock out to the head position
+  const pts = [new THREE.Vector3(-0.16, y0 + 0.05, -0.03), new THREE.Vector3(-0.115, y0 + 0.062, 0.01), new THREE.Vector3(-0.075, y0 + 0.08, 0.045), new THREE.Vector3(-0.025, y0 + 0.09, 0.06)];
+  const curve = new THREE.CatmullRomCurve3(pts); const tube = new THREE.TubeGeometry(curve, 40, 0.015, 14, false);
+  { const p = tube.attributes.position, uv = tube.attributes.uv, v = new THREE.Vector3(); const c0 = new THREE.Vector3(); for (let i = 0; i < p.count; i++) { const u = uv.getX(i); curve.getPointAt(Math.min(1, u), c0); v.fromBufferAttribute(p, i).sub(c0); const s = 0.85 + 0.15 * (1 - u); v.multiplyScalar(s); v.y *= 1.25; p.setXYZ(i, c0.x + v.x, c0.y + v.y, c0.z + v.z); } tube.computeVertexNormals(); }
+  const body = new THREE.Mesh(tube, skin); body.castShadow = true; grp.add(body);
+  // head at the end of the curve, oriented along the tangent
+  const pivot = new THREE.Group(); const end = pts[3], tan = curve.getTangentAt(1); pivot.position.copy(end); pivot.lookAt(end.clone().add(tan)); const swayG = new THREE.Group(); pivot.add(swayG); const head = new THREE.Group(); head.rotation.y = -Math.PI / 2; swayG.add(head);   // head built +x forward
+  const skull = new THREE.Mesh(new THREE.SphereGeometry(0.015, 20, 14), skin); skull.scale.set(1.8, 1.05, 0.95); skull.position.x = 0.012; skull.castShadow = true; head.add(skull);
+  const jawPiv = new THREE.Group(); jawPiv.position.set(0.004, -0.004, 0); const jaw = new THREE.Mesh(new THREE.SphereGeometry(0.0138, 18, 12), skin); jaw.scale.set(1.7, 0.55, 0.85); jaw.position.x = 0.017; jawPiv.add(jaw); head.add(jawPiv);
+  const mouth = new THREE.Mesh(new THREE.SphereGeometry(0.0126, 14, 10), new THREE.MeshStandardMaterial({ color: 0x3a1418, roughness: 0.9 })); mouth.scale.set(1.5, 0.35, 0.7); mouth.position.set(0.019, -0.001, 0); head.add(mouth);
+  for (const sg of [-1, 1]) { const eye = new THREE.Mesh(new THREE.SphereGeometry(0.0022, 10, 8), new THREE.MeshStandardMaterial({ color: 0x0b0b0c, roughness: 0.2 })); eye.position.set(0.024, 0.007, sg * 0.011); head.add(eye);
+    const nos = new THREE.Mesh(new THREE.CylinderGeometry(0.0008, 0.0012, 0.004, 6), skin); nos.position.set(0.036, 0.008, sg * 0.005); nos.rotation.z = -0.5; head.add(nos); }
+  grp.add(pivot); parent.add(grp);
+  const rest = grp.position.clone(); const axis = tan.clone().normalize();
+  return { update(dt, t) {
+    // gape: slow open/close like breathing, with an occasional wider yawn
+    const breath = 0.5 + 0.5 * Math.sin(t * 1.15), yawn = Math.max(0, Math.sin(t * 0.11) - 0.93) * 8;
+    jawPiv.rotation.z = -(0.08 + 0.22 * breath + 0.35 * Math.min(1, yawn));
+    // head sway + slight roll; body retreats into the hole now and then
+    swayG.rotation.y += (0.5 * (pink(t * 0.35, 9) - 0.5) - swayG.rotation.y) * Math.min(1, dt * 2); swayG.rotation.x = 0.25 * (pink(t * 0.3, 4) - 0.5);
+    const out = 1 - Math.max(0, Math.sin(t * 0.07 + 1.0) - 0.75) * 4 * 0.6; grp.position.copy(rest).addScaledVector(axis, -(1 - out) * 0.04);
+  } };
+}
+
 function buildRoom(scene) {
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(4, 4), new THREE.MeshStandardMaterial({ color: 0x2b2a2e, roughness: 0.9 })); floor.rotation.x = -Math.PI / 2; floor.position.y = -0.0005; floor.receiveShadow = true; scene.add(floor);
-  const wall = new THREE.Mesh(new THREE.PlaneGeometry(4, 2.6), new THREE.MeshStandardMaterial({ color: 0x2a3038, roughness: 1 })); wall.position.set(0, 1.0, -0.6); wall.receiveShadow = true; scene.add(wall);
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(4, 4), new THREE.MeshStandardMaterial({ color: 0x3a383c, roughness: 0.9 })); floor.rotation.x = -Math.PI / 2; floor.position.y = -0.0005; floor.receiveShadow = true; scene.add(floor);
+  const wall = new THREE.Mesh(new THREE.PlaneGeometry(4, 2.6), new THREE.MeshStandardMaterial({ color: 0x3a434e, roughness: 1 })); wall.position.set(0, 1.0, -0.6); wall.receiveShadow = true; scene.add(wall);
 }
 
 /* ---------- scene / renderer / post ---------- */
@@ -126,13 +162,13 @@ export const ReefGL = (() => {
   function init(el) {
     renderer = new THREE.WebGLRenderer({ canvas: el, antialias: false, alpha: false, powerPreference: 'high-performance', stencil: false });
     renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2)); renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; renderer.toneMapping = THREE.NoToneMapping; renderer.outputColorSpace = THREE.SRGBColorSpace;
-    scene = new THREE.Scene(); scene.background = new THREE.Color(0x07080b);
-    const pmrem = new THREE.PMREMGenerator(renderer); scene.environment = pmrem.fromScene(nightRoomEnv(), 0.04).texture; scene.environmentIntensity = 0.5; pmrem.dispose();
+    scene = new THREE.Scene(); scene.background = new THREE.Color(0x0c0e12);
+    const pmrem = new THREE.PMREMGenerator(renderer); scene.environment = pmrem.fromScene(nightRoomEnv(), 0.04).texture; scene.environmentIntensity = 0.7; pmrem.dispose();
     camera = new THREE.PerspectiveCamera(28, 1, 0.05, 30);
     buildRoom(scene); reef = buildReef(scene);
-    clock = makeDotClock(0.045, new THREE.Color(2.2, 2.6, 3.0)); clock.mesh.position.set(0, R.cabH * 0.5, R.cabD / 2 + 0.0008); reef.add(clock.mesh);
-    scene.add(new THREE.AmbientLight(0x8fa8c8, 0.05)); scene.add(new THREE.HemisphereLight(0x6f8fb8, 0x14161a, 0.16));
-    const moon = new THREE.SpotLight(0xa9c4ea, 1.2, 8, 0.5, 0.8, 2); moon.position.set(-1.6, 1.9, 0.9); moon.target.position.set(0.1, 0.2, 0); moon.castShadow = true; moon.shadow.mapSize.set(1024, 1024); moon.shadow.camera.near = 0.5; moon.shadow.camera.far = 5; moon.shadow.bias = -0.0004; moon.shadow.normalBias = 0.003; moon.shadow.radius = 5; scene.add(moon); scene.add(moon.target);
+    clock = makeGlowClock(0.085, new THREE.Color(1.6, 2.1, 2.6)); clock.mesh.position.set(0, R.cabH * 0.52, R.cabD / 2 + 0.0008); reef.add(clock.mesh);
+    scene.add(new THREE.AmbientLight(0x8fa8c8, 0.08)); scene.add(new THREE.HemisphereLight(0x8fb0d8, 0x1c1e24, 0.32));
+    const moon = new THREE.SpotLight(0xb9d0f0, 2.4, 8, 0.55, 0.8, 2); moon.position.set(-1.6, 1.9, 0.9); moon.target.position.set(0.1, 0.2, 0); moon.castShadow = true; moon.shadow.mapSize.set(1024, 1024); moon.shadow.camera.near = 0.5; moon.shadow.camera.far = 5; moon.shadow.bias = -0.0004; moon.shadow.normalBias = 0.003; moon.shadow.radius = 5; scene.add(moon); scene.add(moon.target);
     // fish
     const { y0, waterH } = reef.userData; const W = R.W, D = R.D;
     const full = new THREE.Box3(new THREE.Vector3(-W / 2 + 0.03, y0 + 0.05, -D / 2 + 0.03), new THREE.Vector3(W / 2 - 0.03, y0 + waterH - 0.025, D / 2 - 0.03));
@@ -155,14 +191,14 @@ export const ReefGL = (() => {
   function adapt(dt) { if (dt > 1 / 36) slowFrames++; else slowFrames = Math.max(0, slowFrames - 2); if (slowFrames > 120 && qScale > 0.7) { qScale = Math.max(0.7, qScale - 0.15); slowFrames = 0; applySize(); } }
   function frame() {
     const w = lastW, h = lastH; camera.aspect = w / h; const land = w > h;
-    const totalH = R.cabH + R.H + 0.14, totalW = R.W + 0.04;
+    const totalH = R.cabH + R.H + 0.09, totalW = R.W + 0.02;
     const vf = THREE.MathUtils.degToRad(camera.fov), hf = 2 * Math.atan(Math.tan(vf / 2) * camera.aspect);
     // landscape: fit the whole tank + light bar; portrait: fit the tank width (the cabinet with the clock sits below)
-    const dist = R.D / 2 + Math.max(totalW * (land ? 1.06 : 1.02) / 2 / Math.tan(hf / 2), land ? totalH * 1.05 / 2 / Math.tan(vf / 2) : 0) / view.zoom;
-    const cy = R.cabH + R.H * 0.45, halfH = Math.tan(vf / 2) * dist, halfW = halfH * camera.aspect, ox = -view.px * halfW, oy = -view.py * halfH;
+    const dist = R.D / 2 + Math.max(totalW * (land ? 1.02 : 1.0) / 2 / Math.tan(hf / 2), land ? totalH * 1.02 / 2 / Math.tan(vf / 2) : 0) / view.zoom;
+    const cy = R.cabH + R.H * 0.42, halfH = Math.tan(vf / 2) * dist, halfW = halfH * camera.aspect, ox = -view.px * halfW, oy = -view.py * halfH;
     camera.position.set(dist * 0.12 + ox, cy + dist * 0.14 + oy, dist * 0.99); camera.lookAt(0.0 + ox, cy - 0.01 + oy, 0); camera.updateProjectionMatrix(); camera.userData.dx = camera.userData.dy = 0;
   }
-  function setColors(hexA, hexB) { const c = new THREE.Color(hexA), cool = new THREE.Color(0xdff0ff); c.lerp(cool, 0.7).multiplyScalar(2.6); clock.mat.color.copy(c); }
+  function setColors(hexA, hexB) { const c = new THREE.Color(hexA), cool = new THREE.Color(0xdff0ff); c.lerp(cool, 0.55).multiplyScalar(2.2); clock.mat.color.copy(c); }
   function motion(ax, ay, az) { wind.vx -= ax * 0.04; wind.vz -= az * 0.025; wind.slosh = Math.min(1, wind.slosh + Math.hypot(ax, ay, az) / 14); }
   function tilt(g, b) { if (tiltBase.g === null) { tiltBase.g = g || 0; tiltBase.b = b || 0; } tiltBase.g += ((g || 0) - tiltBase.g) * 0.03; tiltBase.b += ((b || 0) - tiltBase.b) * 0.03;
     wind.tx = -Math.sin(THREE.MathUtils.degToRad(clamp((g || 0) - tiltBase.g, -45, 45))) * 0.5; wind.tz = Math.sin(THREE.MathUtils.degToRad(clamp((b || 0) - tiltBase.b, -45, 45))) * 0.35; }
@@ -177,8 +213,9 @@ export const ReefGL = (() => {
     // current: slow reversing flow (like a wavemaker), tilt adds to it; anemone leans with it
     const cur = Math.sin(t * 0.25) * 0.012 + wind.x * 0.02; sway.value = cur * 30 + Math.sin(t * 0.7) * 0.15; flowV.set(cur, 0, wind.z * 0.015);
     U.rayMat.uniforms.uT.value = t; U.caustics.material.uniforms.uT.value = t; U.caustics.material.uniforms.uAmt.value = 0.42 + wind.slosh * 0.5 + bass * 0.15;
-    U.beam.intensity = 1.0 * (0.97 + 0.03 * pink(t * 0.4, 5)) * (1 + bass * 0.2); U.glow.intensity = 0.5 * (1 + bass * 0.3);
+    U.beam.intensity = 1.7 * (0.97 + 0.03 * pink(t * 0.4, 5)) * (1 + bass * 0.2); U.glow.intensity = 0.5 * (1 + bass * 0.3);
     for (const s of swimmers) s.update(sdt, t, flowV, null); for (const s of clowns) s.update(sdt, t, flowV, clowns); for (const s of school) s.update(sdt, t, flowV, school);
+    U.eel.update(sdt, t);
     // plankton drift
     const mp = U.motePos, y0 = U.y0, W = R.W, D = R.D; for (let i = 0; i < mp.length; i += 3) { mp[i] += (cur * 0.6 + Math.sin(t * 0.5 + i) * 0.002) * sdt; mp[i + 1] += Math.sin(t * 0.3 + i * 0.7) * 0.0015 * sdt; if (mp[i] > W / 2 - 0.02) mp[i] = -W / 2 + 0.02; if (mp[i] < -W / 2 + 0.02) mp[i] = W / 2 - 0.02; } U.motes.geometry.attributes.position.needsUpdate = true;
     if (mo > 0) { camera.position.x += 0.006 * Math.sin(t * 2 * Math.PI / 47) - (camera.userData.dx || 0); camera.userData.dx = 0.006 * Math.sin(t * 2 * Math.PI / 47);

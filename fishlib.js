@@ -220,6 +220,28 @@ export function makeDotClock(h, color = new THREE.Color(2.6, 2.4, 2.1)) {
 }
 
 
+
+/* ---------- soft typographic clock: thin sans digits with a bloom-friendly halo (for dark cabinets) ---------- */
+export function makeGlowClock(h, color = new THREE.Color(2.0, 2.4, 2.8)) {
+  const c = document.createElement('canvas'); c.width = 2048; c.height = 512; const x = c.getContext('2d');
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
+  const w = h * (2048 / 512);
+  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, color });
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat); mesh.renderOrder = 40;
+  let last = '';
+  function set(text, suffix) { const key = text + '|' + suffix; if (key === last) return; last = key;
+    x.clearRect(0, 0, c.width, c.height); x.textAlign = 'center'; x.textBaseline = 'middle';
+    const FONT = (px, wt) => `${wt} ${px}px 'Poppins','Sora','Inter',system-ui,sans-serif`;
+    let fs = 400; x.font = FONT(fs, 200); const maxW = suffix ? 1500 : 1800; while (x.measureText(text).width > maxW && fs > 160) { fs -= 16; x.font = FONT(fs, 200); }
+    const tw = x.measureText(text).width, cx0 = suffix ? 1024 - 110 : 1024, cy = 262;
+    // halo (wide, faint) then core (sharp)
+    x.fillStyle = 'rgba(255,255,255,0.35)'; x.shadowColor = 'rgba(255,255,255,0.9)'; x.shadowBlur = 42; x.fillText(text, cx0, cy); x.fillText(text, cx0, cy);
+    x.shadowBlur = 0; x.fillStyle = '#ffffff'; x.fillText(text, cx0, cy);
+    if (suffix) { x.font = FONT(110, 300); x.textAlign = 'left'; x.shadowBlur = 24; x.shadowColor = 'rgba(255,255,255,0.8)'; x.fillText(suffix, cx0 + tw / 2 + 36, cy + fs * 0.22); x.shadowBlur = 0; x.fillText(suffix, cx0 + tw / 2 + 36, cy + fs * 0.22); }
+    tex.needsUpdate = true; }
+  return { set, mat, mesh };
+}
+
 /* ---------- swimmer ----------
    o: cruise (m/s), turn (rad/s max), accel, bank, beat (Hz at cruise), hoverP, dartP, jumpP (jumps per second), surfaceY (for jumps)
    Turning is second order: the yaw *rate* is driven by a spring toward the desired rate, so a turn starts gently, peaks,
