@@ -1,9 +1,10 @@
 /* Lumina Clock service worker — offline app shell */
-const CACHE = 'lumina-v31';
+const CACHE = 'lumina-v33';
 const ASSETS = [
   './',
   './index.html',
   './hearth3d.js',
+  './tank3d.js',
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png'

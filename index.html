@@ -445,6 +445,7 @@ body.calm #layer-bold .d{ transition:transform .5s cubic-bezier(.22,1,.36,1); }
 
   <canvas id="bgcanvas"></canvas>
   <canvas id="gl3d" style="position:fixed;inset:0;width:100%;height:100%;display:none;z-index:1"></canvas>
+  <canvas id="gl3d2" style="position:fixed;inset:0;width:100%;height:100%;display:none;z-index:1"></canvas>
   <canvas id="weatherfx"></canvas>
   <canvas id="viz"></canvas>
 
@@ -574,8 +575,8 @@ body.calm #layer-bold .d{ transition:transform .5s cubic-bezier(.22,1,.36,1); }
       <div class="row"><div class="lbl">Auto night dimming<small>Dims + warms after sunset</small></div><div class="tg on" id="tg-night"></div></div>
       <div class="row"><div class="lbl">Burn-in drift<small>Slowly nudges pixels (OLED safe)</small></div><div class="tg on" id="tg-drift"></div></div>
 
-      <div class="sect">Hearth (3D diffuser)</div>
-      <div class="row"><div class="lbl">Phone motion<small id="hm-status">Vapor and logs react when you move the phone</small></div><button class="btn" id="hm-enable">Enable</button></div>
+      <div class="sect">3D scenes (Hearth · Aquarium)</div>
+      <div class="row"><div class="lbl">Phone motion<small id="hm-status">Vapor, logs, water and fish react when you move the phone</small></div><button class="btn" id="hm-enable">Enable</button></div>
       <div class="row"><div class="lbl">Zoom<small>Or pinch on screen · drag vertically / two fingers to move the box</small></div><input type="range" min="50" max="300" value="100" class="bright" id="hz-zoom" /></div>
       <div class="row"><div class="lbl">View position</div><button class="btn" id="hz-reset">Reset view</button></div>
 
@@ -615,7 +616,7 @@ const DEFAULTS={
   mic:false, audio:false, weather:false, wfx:true,
   wake:true, night:true, drift:true,
   accent:'#6ad5ff', accent2:'#b892ff', accentAuto:true,
-  bg:'auto', font:'Poppins', numColor:'default', brightness:100, motion:'calm', motionSensor:false, hearthView:{zoom:1,px:0,py:0}
+  bg:'auto', font:'Poppins', numColor:'default', brightness:100, motion:'calm', motionSensor:false, hearthView:{zoom:1,px:0,py:0}, tankView:{zoom:1,px:0,py:0}
 };
 let S=Object.assign({},DEFAULTS);
 try{ const saved=JSON.parse(localStorage.getItem('lumina')||'{}'); Object.assign(S,saved);
@@ -668,6 +669,7 @@ const PALETTES={
   bold:{bg:{type:'solid',c:'#000000'},accent:'#2f6fe0',accent2:'#6db3ff'},
   serene:{bg:{type:'grad',a:'#0e1626',b:'#050810'},accent:'#a3b9ff',accent2:'#b7efe3'},
   hearth:{bg:{type:'grad',a:'#140708',b:'#020102'},accent:'#ffb347',accent2:'#ff6a2a'},
+  tank:{bg:{type:'grad',a:'#0b1a26',b:'#020507'},accent:'#8fd8ff',accent2:'#ffb6d9'},
   minimal:{bg:{type:'solid',c:'#0a0a0c'},accent:'#e8e8ee',accent2:'#ff4d00'},
   nixie:{bg:{type:'grad',a:'#2a1405',b:'#0a0402'},accent:'#ff7a18',accent2:'#ffd15c'},
   binary:{bg:{type:'solid',c:'#03060a'},accent:'#39ff14',accent2:'#00e5ff'},
@@ -1650,24 +1652,39 @@ function drawHearth(dt){
   bgx.restore();
 }
 registerTheme('serene',{ name:'Serene', desc:'Soothing two-tone, dusk diffuser', kind:'dom', noBackdrop:true, draw(){ drawDiffuser(); } });
-/* Hearth: real-time 3D scene (Three.js, PBR + LED-lit mist + bloom) loaded on demand; the 2D painter is the fallback while it loads or without WebGL2 */
-const gl3d=$('#gl3d'); let hearth3dState='idle';   // idle | loading | ready | failed
-function hearth3dLoad(){ if(hearth3dState!=='idle') return; hearth3dState='loading';
-  const test=document.createElement('canvas'); if(!test.getContext('webgl2')){ hearth3dState='failed'; return; }
-  import('./hearth3d.js').then(()=>{ try{ window.HearthGL.init(gl3d); hearth3dSync(); hearth3dState='ready'; if(S.motionSensor) hearthMotionEnable(false); }catch(e){ console.warn('hearth3d init failed',e); hearth3dState='failed'; } })
-    .catch(e=>{ console.warn('hearth3d load failed',e); hearth3dState='failed'; }); }
+/* 3D faces (Three.js, PBR + bloom), loaded on demand; each has its own WebGL canvas. A 2D painter is the fallback while loading / without WebGL2 */
+const GL3D={ hearth:{url:'./hearth3d.js',global:'HearthGL',canvas:'#gl3d', state:'idle',viewKey:'hearthView'},
+             tank:  {url:'./tank3d.js',  global:'TankGL',  canvas:'#gl3d2',state:'idle',viewKey:'tankView'} };
+function gl3dLoad(id){ const F=GL3D[id]; if(F.state!=='idle') return; F.state='loading';
+  const test=document.createElement('canvas'); if(!test.getContext('webgl2')){ F.state='failed'; return; }
+  import(F.url).then(()=>{ try{ window[F.global].init($(F.canvas)); F.state='ready'; gl3dSync(id); if(S.motionSensor) hearthMotionEnable(false); }catch(e){ console.warn(id+' 3d init failed',e); F.state='failed'; } })
+    .catch(e=>{ console.warn(id+' 3d load failed',e); F.state='failed'; }); }
+function gl3dApi(id){ const F=GL3D[id]; return (F&&F.state==='ready'&&window[F.global]&&window[F.global].ready)?window[F.global]:null; }
+function gl3dActive(){ return activeTheme&&GL3D[activeTheme.id]?gl3dApi(activeTheme.id):null; }
+function gl3dSync(id){ const api=gl3dApi(id); if(!api) return; const F=GL3D[id], v=S[F.viewKey]||{zoom:1,px:0,py:0}; api.setView(v.zoom,v.px,v.py); api.resize(state.w,state.h); api.setColors(S.accent,S.accent2); }
+function gl3dViewSet(zoom,px,py){ const api=gl3dActive(); if(!api) return; const F=GL3D[activeTheme.id]; S[F.viewKey]=api.setView(zoom,px,py); save(); const z=$('#hz-zoom'); if(z) z.value=Math.round(S[F.viewKey].zoom*100); }
+function register3dFace(id,name,desc,fallbackDraw,onInit){
+  registerTheme(id,{ name, desc, kind:'canvas',
+    init(){ if(onInit) onInit(); gl3dLoad(id); const cv=$(GL3D[id].canvas); if(gl3dApi(id)){ gl3dSync(id); cv.style.display='block'; } $('#weatherfx').style.visibility='hidden'; },   // indoor scenes: no stars/rain overlay
+    layout(){ gl3dSync(id); },
+    destroy(){ $(GL3D[id].canvas).style.display='none'; $('#weatherfx').style.visibility=''; },
+    draw(dt){ const api=gl3dApi(id), cv=$(GL3D[id].canvas);
+      if(api){ if(cv.style.display!=='block'){ cv.style.display='block'; gl3dSync(id); }
+        if(this._acc!==S.accent||this._acc2!==S.accent2){ this._acc=S.accent; this._acc2=S.accent2; api.setColors(S.accent,S.accent2); }
+        bgx.clearRect(0,0,state.w,state.h); const T=timeStr();
+        api.render(Math.min(0.05,dt||0.016), T.text, S.fmt==='12'?T.suffix.trim():'', MO(), state.audio.bass); return; }
+      fallbackDraw(dt); } }); }
 /* phone motion -> the vapor + logs. iOS only grants sensor access from a tap via requestPermission() (and may silently deny in a
    home-screen PWA), so this is an explicit Settings button with visible status; Android / desktop attach directly. */
 let hearthMotionHooked=false, hmEvents=0, hmLast=0;
 function hmStatus(txt){ const el=$('#hm-status'); if(el) el.textContent=txt; }
 function hearthMotionAttach(){ if(hearthMotionHooked) return; hearthMotionHooked=true;
-  const live=()=>hearth3dState==='ready'&&activeTheme&&activeTheme.id==='hearth'&&window.HearthGL;
   const ang=()=>{ const a=(screen.orientation&&typeof screen.orientation.angle==='number')?screen.orientation.angle:(window.orientation||0); return ((a%360)+360)%360; };
-  addEventListener('devicemotion',(e)=>{ hmEvents++; hmLast=Date.now(); if(!live()) return; const a=e.acceleration||{}, r=e.rotationRate||{}; let ax=a.x||0, ay=a.y||0; const o=ang();
+  addEventListener('devicemotion',(e)=>{ hmEvents++; hmLast=Date.now(); const api=gl3dActive(); if(!api) return; const a=e.acceleration||{}, r=e.rotationRate||{}; let ax=a.x||0, ay=a.y||0; const o=ang();
     if(o===90){ [ax,ay]=[-ay,ax]; } else if(o===270){ [ax,ay]=[ay,-ax]; } else if(o===180){ ax=-ax; ay=-ay; }
-    window.HearthGL.motion(ax,ay,a.z||0,r.beta||0,r.gamma||0,r.alpha||0); },{passive:true});
-  addEventListener('deviceorientation',(e)=>{ if(!live()) return; let g=e.gamma||0, b=e.beta||0; const o=ang();
-    if(o===90){ [g,b]=[b,-g]; } else if(o===270){ [g,b]=[-b,g]; } window.HearthGL.tilt(g,b); },{passive:true});
+    api.motion(ax,ay,a.z||0,r.beta||0,r.gamma||0,r.alpha||0); },{passive:true});
+  addEventListener('deviceorientation',(e)=>{ const api=gl3dActive(); if(!api) return; let g=e.gamma||0, b=e.beta||0; const o=ang();
+    if(o===90){ [g,b]=[b,-g]; } else if(o===270){ [g,b]=[-b,g]; } api.tilt(g,b); },{passive:true});
   setInterval(()=>{ const btn=$('#hm-enable'); if(!btn) return; if(hmEvents>0){ btn.textContent='On'; hmStatus(Date.now()-hmLast<2000?`Listening · ${hmEvents} motion events`:'Enabled · move the phone to see it react'); } },1000); }
 function hearthMotionEnable(fromGesture){
   if(typeof DeviceMotionEvent==='undefined'){ hmStatus('This device has no motion sensors'); return; }
@@ -1682,18 +1699,11 @@ function hearthMotionEnable(fromGesture){
 }
 // re-arm quietly on later launches: iOS still needs a gesture, so use the first tap once the user has opted in
 if(S.motionSensor){ addEventListener('pointerdown',()=>hearthMotionEnable(true),{once:true}); }
-function hearth3dSync(){ if(!window.HearthGL||!window.HearthGL.ready) return; const v=S.hearthView||{zoom:1,px:0,py:0}; window.HearthGL.setView(v.zoom,v.px,v.py); window.HearthGL.resize(state.w,state.h); window.HearthGL.setColors(S.accent,S.accent2); }
-function hearthViewSet(zoom,px,py){ if(!window.HearthGL||!window.HearthGL.ready) return; S.hearthView=window.HearthGL.setView(zoom,px,py); save(); const z=$('#hz-zoom'); if(z) z.value=Math.round(S.hearthView.zoom*100); }
-registerTheme('hearth',{ name:'Hearth', desc:'Flame diffuser with LED clock', kind:'canvas',
-  init(){ flames=[]; mist=[]; sparks=[]; plumeFire.a.fill(0); hearthFire.a.fill(0); hearth3dLoad(); if(hearth3dState==='ready'){ hearth3dSync(); gl3d.style.display='block'; } $('#weatherfx').style.visibility='hidden'; },   // indoor scene: no stars/rain overlay
-  layout(){ hearth3dSync(); },
-  destroy(){ gl3d.style.display='none'; $('#weatherfx').style.visibility=''; },
-  draw(dt){
-    if(hearth3dState==='ready'){ if(gl3d.style.display!=='block'){ gl3d.style.display='block'; hearth3dSync(); }
-      if(this._acc!==S.accent||this._acc2!==S.accent2){ this._acc=S.accent; this._acc2=S.accent2; window.HearthGL.setColors(S.accent,S.accent2); }
-      bgx.clearRect(0,0,state.w,state.h); const T=timeStr();
-      window.HearthGL.render(Math.min(0.05,dt||0.016), T.text, S.fmt==='12'?T.suffix.trim():'', MO(), state.audio.bass); return; }
-    drawHearth(dt); } });
+register3dFace('hearth','Hearth','Flame diffuser with LED clock', drawHearth, ()=>{ flames=[]; mist=[]; sparks=[]; plumeFire.a.fill(0); hearthFire.a.fill(0); });
+register3dFace('tank','Aquarium','Desktop betta tank, living room', drawTankFallback);
+function drawTankFallback(){ paintBase(bgx); const {w,h}=state, T=timeStr(); bgx.fillStyle=hexA(S.accent,0.9); bgx.textAlign='center'; bgx.textBaseline='middle';
+  bgx.font=`700 ${Math.min(w*0.16,h*0.2)}px 'DSEG7 Classic','Share Tech Mono',monospace`; bgx.fillText(T.text,w/2,h/2);
+  bgx.font=`500 ${Math.min(w*0.035,h*0.04)}px Poppins,sans-serif`; bgx.fillStyle='rgba(255,255,255,.5)'; bgx.fillText('loading aquarium…',w/2,h/2+Math.min(w*0.12,h*0.14)); }
 registerTheme('neon',{ name:'Neon', desc:'Glowing tube numerals', kind:'dom',
   draw(){ const g=0.6+state.audio.bass*1.5; if(Math.abs(g-(this._g||0))>0.05){ this._g=g; $('#layer-neon').style.setProperty('--glow',g.toFixed(2)); } }
 });
@@ -2106,8 +2116,8 @@ $('#tg-weather').addEventListener('click',async()=>{
 function noteAudio(m){ $('#audio-note').textContent=m||''; }
 $('#bright').addEventListener('input',e=>{ S.brightness=+e.target.value; applyDim(); save(); });
 $('#hm-enable').addEventListener('click',()=>hearthMotionEnable(true));
-$('#hz-zoom').addEventListener('input',e=>{ const v=(S.hearthView||{px:0,py:0}); hearthViewSet(+e.target.value/100, v.px, v.py); });
-$('#hz-reset').addEventListener('click',()=>hearthViewSet(1,0,0));
+$('#hz-zoom').addEventListener('input',e=>{ const api=gl3dActive(); if(!api) return; const v=api.getView(); gl3dViewSet(+e.target.value/100, v.px, v.py); });
+$('#hz-reset').addEventListener('click',()=>gl3dViewSet(1,0,0));
 
 /* segmented controls */
 $('#unit-ctrl').addEventListener('click',e=>{ if(e.target.dataset.unit){ S.unit=e.target.dataset.unit; setSeg('#unit-ctrl',S.unit,'unit'); save(); Weather.renderChip(); } });
@@ -2133,14 +2143,14 @@ $('#btn-audio').addEventListener('click',()=>{ // quick toggle: mic first, else 
 let sx=0,sy=0,st=0,moved=false;
 /* Hearth 3D view gestures: pinch = zoom, two-finger drag = move, one-finger VERTICAL drag = move up/down (horizontal swipe still changes face) */
 const ptrs=new Map(); let pinch=null, panned=false, panLast=0;
-const hearthLive=()=>hearth3dState==='ready'&&activeTheme&&activeTheme.id==='hearth'&&window.HearthGL;
+const hearthLive=()=>!!gl3dActive();
 addEventListener('pointerdown',e=>{ if($('#settings').classList.contains('open'))return; sx=e.clientX; sy=e.clientY; st=Date.now(); moved=false; panned=false; panLast=0;
-  if(hearthLive()){ ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); if(ptrs.size===2){ const [a,b]=[...ptrs.values()]; pinch={d:Math.hypot(a.x-b.x,a.y-b.y), cx:(a.x+b.x)/2, cy:(a.y+b.y)/2, view:window.HearthGL.getView()}; } } });
+  if(hearthLive()){ ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); if(ptrs.size===2){ const [a,b]=[...ptrs.values()]; pinch={d:Math.hypot(a.x-b.x,a.y-b.y), cx:(a.x+b.x)/2, cy:(a.y+b.y)/2, view:gl3dActive().getView()}; } } });
 addEventListener('pointermove',e=>{ if(Math.abs(e.clientX-sx)>10||Math.abs(e.clientY-sy)>10) moved=true;
   if(!hearthLive()||!ptrs.has(e.pointerId)) return; ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
   if(ptrs.size===2&&pinch){ const [a,b]=[...ptrs.values()]; const d=Math.hypot(a.x-b.x,a.y-b.y), cx=(a.x+b.x)/2, cy=(a.y+b.y)/2;
-    hearthViewSet(pinch.view.zoom*d/pinch.d, pinch.view.px+(cx-pinch.cx)/state.w*2, pinch.view.py-(cy-pinch.cy)/state.h*2); panned=true; }
-  else if(ptrs.size===1){ const dx=e.clientX-sx, dy=e.clientY-sy; if(panned||(Math.abs(dy)>14&&Math.abs(dy)>Math.abs(dx)*1.2)){ const v=window.HearthGL.getView(); hearthViewSet(v.zoom, v.px, v.py-(dy-panLast)/state.h*2); panned=true; } panLast=dy; } });
+    gl3dViewSet(pinch.view.zoom*d/pinch.d, pinch.view.px+(cx-pinch.cx)/state.w*2, pinch.view.py-(cy-pinch.cy)/state.h*2); panned=true; }
+  else if(ptrs.size===1){ const dx=e.clientX-sx, dy=e.clientY-sy; if(panned||(Math.abs(dy)>14&&Math.abs(dy)>Math.abs(dx)*1.2)){ const v=gl3dActive().getView(); gl3dViewSet(v.zoom, v.px, v.py-(dy-panLast)/state.h*2); panned=true; } panLast=dy; } });
 addEventListener('pointerup',e=>{ ptrs.delete(e.pointerId); if(ptrs.size<2) pinch=null;
   if($('#settings').classList.contains('open'))return;
   if(e.target.closest('#toolbar'))return;
@@ -2150,7 +2160,7 @@ addEventListener('pointerup',e=>{ ptrs.delete(e.pointerId); if(ptrs.size<2) pinc
   else if(!moved && dtm<300){ toggleChrome(); }
 });
 addEventListener('pointercancel',e=>{ ptrs.delete(e.pointerId); if(ptrs.size<2) pinch=null; });
-addEventListener('wheel',e=>{ if(!hearthLive()) return; const v=window.HearthGL.getView(); hearthViewSet(v.zoom*(e.deltaY<0?1.08:0.925), v.px, v.py); },{passive:true});
+addEventListener('wheel',e=>{ if(!hearthLive()) return; const v=gl3dActive().getView(); gl3dViewSet(v.zoom*(e.deltaY<0?1.08:0.925), v.px, v.py); },{passive:true});
 let chromeTimer=null;
 function toggleChrome(){ document.body.classList.toggle('chrome-hidden'); armChromeHide(); }
 function armChromeHide(){ clearTimeout(chromeTimer); if(!document.body.classList.contains('chrome-hidden'))
